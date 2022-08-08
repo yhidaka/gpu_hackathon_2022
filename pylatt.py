@@ -21,6 +21,7 @@ import sys
 import time
 import warnings
 
+import cupy as cp
 from matplotlib.cbook import flatten
 from matplotlib.collections import PatchCollection
 import matplotlib.patches as mpatches
@@ -30,13 +31,25 @@ from scipy.linalg import logm
 import scipy.optimize as opt
 from scipy.optimize import fmin
 
+ncp = np
+
 import mvp
 
-np.seterr(all="ignore")
+ncp.seterr(all="ignore")
 
 # --- global parameters:
 csp = 299792458.0  # speed of light
-twopi = 2 * np.pi
+twopi = 2 * ncp.pi
+
+
+def use_cpu():
+    global ncp
+    ncp = np
+
+
+def use_gpu():
+    global ncp
+    ncp = cp
 
 
 class drif(object):
@@ -56,10 +69,10 @@ class drif(object):
 
     def __init__(self, name="D01", L=1.0, nkick=0, Dx=0, Dy=0, tilt=0, tag=[]):
         self.name = str(name)
-        self._L = float(L)
-        self._Dx = float(Dx)
-        self._Dy = float(Dy)
-        self._tilt = float(tilt)
+        self._L = ncp.float64(L)
+        self._Dx = ncp.float64(Dx)
+        self._Dy = ncp.float64(Dy)
+        self._tilt = ncp.float64(tilt)
         self._nkick = int(nkick)
         self.tag = tag
         self._update()
@@ -87,7 +100,7 @@ class drif(object):
     @L.setter
     def L(self, value):
         try:
-            self._L = float(value)
+            self._L = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("L must be float (or convertible)")
@@ -99,7 +112,7 @@ class drif(object):
     @Dx.setter
     def Dx(self, value):
         try:
-            self._Dx = float(value)
+            self._Dx = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("Dx must be float (or convertible)")
@@ -111,7 +124,7 @@ class drif(object):
     @Dy.setter
     def Dy(self, value):
         try:
-            self._Dy = float(value)
+            self._Dy = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("Dy must be float (or convertible)")
@@ -123,7 +136,7 @@ class drif(object):
     @tilt.setter
     def tilt(self, value):
         try:
-            self._tilt = float(value)
+            self._tilt = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("tilt must be float (or convertible)")
@@ -164,7 +177,7 @@ class drif(object):
         """
         calculate linear transport matrix
         """
-        self._tm = np.eye(6)
+        self._tm = ncp.eye(6)
         self._tm[0, 1] = self.L
         self._tm[2, 3] = self.L
 
@@ -189,10 +202,10 @@ class drif(object):
         if fast = 1, assume x has (6,-1), otherwise reshape x
         """
         if not fast:
-            x = np.array(x, dtype=float).reshape(6, -1)
+            x = ncp.array(x, dtype=ncp.float64).reshape(6, -1)
         if self.L != 0:
             x = self.tm.dot(x)
-            x[4] += (np.sqrt(1.0 + np.square(x[1]) + np.square(x[3])) - 1.0) * self.L
+            x[4] += (ncp.sqrt(1.0 + ncp.square(x[1]) + ncp.square(x[3])) - 1.0) * self.L
         return x
 
 
@@ -214,12 +227,12 @@ class quad(drif):
 
     def __init__(self, name="Q01", L=0.25, K1=1, nkick=4, Dx=0, Dy=0, tilt=0, tag=[]):
         self.name = str(name)
-        self._L = float(L)
-        self._K1 = float(K1)
+        self._L = ncp.float64(L)
+        self._K1 = ncp.float64(K1)
         self._nkick = int(nkick)
-        self._Dx = float(Dx)
-        self._Dy = float(Dy)
-        self._tilt = float(tilt)
+        self._Dx = ncp.float64(Dx)
+        self._Dy = ncp.float64(Dy)
+        self._tilt = ncp.float64(tilt)
         self.tag = tag
         self._update()
 
@@ -239,30 +252,30 @@ class quad(drif):
     @K1.setter
     def K1(self, value):
         try:
-            self._K1 = float(value)
+            self._K1 = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("K1 must be float (or convertible)")
 
     def _transmatrix(self):
-        self._tm = np.eye(6)
+        self._tm = ncp.eye(6)
         if self.K1 > 0:
-            k = np.sqrt(self.K1)
+            k = ncp.sqrt(self.K1)
             p = k * self.L
-            self._tm[0:2, 0:2] = np.array(
-                [[np.cos(p), np.sin(p) / k], [-k * np.sin(p), np.cos(p)]]
+            self._tm[0:2, 0:2] = ncp.array(
+                [[ncp.cos(p), ncp.sin(p) / k], [-k * ncp.sin(p), ncp.cos(p)]]
             )
-            self._tm[2:4, 2:4] = np.array(
-                [[np.cosh(p), np.sinh(p) / k], [k * np.sinh(p), np.cosh(p)]]
+            self._tm[2:4, 2:4] = ncp.array(
+                [[ncp.cosh(p), ncp.sinh(p) / k], [k * ncp.sinh(p), ncp.cosh(p)]]
             )
         elif self.K1 < 0:
-            k = np.sqrt(-self.K1)
+            k = ncp.sqrt(-self.K1)
             p = k * self.L
-            self._tm[0:2, 0:2] = np.array(
-                [[np.cosh(p), np.sinh(p) / k], [k * np.sinh(p), np.cosh(p)]]
+            self._tm[0:2, 0:2] = ncp.array(
+                [[ncp.cosh(p), ncp.sinh(p) / k], [k * ncp.sinh(p), ncp.cosh(p)]]
             )
-            self._tm[2:4, 2:4] = np.array(
-                [[np.cos(p), np.sin(p) / k], [-k * np.sin(p), np.cos(p)]]
+            self._tm[2:4, 2:4] = ncp.array(
+                [[ncp.cos(p), ncp.sin(p) / k], [-k * ncp.sin(p), ncp.cos(p)]]
             )
         else:
             super(quad, self)._transmatrix()
@@ -295,10 +308,10 @@ class quad(drif):
         g = 1.351207191959657328
         d = -1.702414383919314656
         self._dL = self.L / self.nkick
-        self._Ma = np.eye(6)
+        self._Ma = ncp.eye(6)
         self._Ma[0, 1] = a * self._dL
         self._Ma[2, 3] = self._Ma[0, 1]
-        self._Mb = np.eye(6)
+        self._Mb = ncp.eye(6)
         self._Mb[0, 1] = b * self._dL
         self._Mb[2, 3] = self._Mb[0, 1]
         self._K1Lg = g * self.K1 * self._dL
@@ -309,7 +322,7 @@ class quad(drif):
         implement 4th order symplectic tracking with given initial conditions
         """
         if not fast:
-            x = np.array(x, dtype=float).reshape(6, -1)
+            x = ncp.array(x, dtype=ncp.float64).reshape(6, -1)
         if self.K1 == 0 or self.L == 0:
             return super(quad, self).sympass4(x)
         else:
@@ -335,7 +348,7 @@ class quad(drif):
                 x2p, y2p = x[1], x[3]
                 xp, yp = (x1p + x2p) / 2, (y1p + y2p) / 2
                 # --- average slope at entrance and exit
-                S += np.sqrt(1.0 + np.square(xp) + np.square(yp)) * self._dL
+                S += ncp.sqrt(1.0 + ncp.square(xp) + ncp.square(yp)) * self._dL
             if self.tilt != 0:
                 x = rotmat(-self.tilt).dot(x)
             if self.Dy != 0:
@@ -349,7 +362,7 @@ class quad(drif):
 class matr(drif):
     """
     class matr: define a linear element with its given 6x6 matrix
-    usage: M01 = matr(name='M01',tm=np.eye(6),Dx=0,Dy=0,tilt=0,tag=[])
+    usage: M01 = matr(name='M01',tm=ncp.eye(6),Dx=0,Dy=0,tilt=0,tag=[])
 
     Parameter list:
     name:         element name
@@ -361,13 +374,13 @@ class matr(drif):
     tag:          tag list for searching
     """
 
-    def __init__(self, name="MAT01", L=0, tm=np.eye(6), Dx=0, Dy=0, tilt=0, tag=[]):
+    def __init__(self, name="MAT01", L=0, tm=ncp.eye(6), Dx=0, Dy=0, tilt=0, tag=[]):
         self.name = str(name)
-        self._L = float(L)
-        self._tm = np.array(tm).reshape(6, 6)
-        self._Dx = float(Dx)
-        self._Dy = float(Dy)
-        self._tilt = float(tilt)
+        self._L = ncp.float64(L)
+        self._tm = ncp.array(tm).reshape(6, 6)
+        self._Dx = ncp.float64(Dx)
+        self._Dy = ncp.float64(Dy)
+        self._tilt = ncp.float64(tilt)
         self.tag = tag
         self._update()
 
@@ -378,7 +391,7 @@ class matr(drif):
     @tm.setter
     def tm(self, value):
         try:
-            self._tm = np.array(value).reshape(6, 6)
+            self._tm = ncp.array(value).reshape(6, 6)
             self._update()
         except:
             raise RuntimeError("tm must be 6x6 float (or convertible)")
@@ -387,7 +400,7 @@ class matr(drif):
         """
         if the given matrix is not symplectic, print warning
         """
-        if abs(np.linalg.det(self.tm) - 1.0) > 1.0e-6:
+        if abs(ncp.linalg.det(self.tm) - 1.0) > 1.0e-6:
             print("warning: %s's linear matrix is not symplectic" % self.name)
         if self.tilt != 0.0:
             r1 = rotmat(-self.tilt)
@@ -400,12 +413,12 @@ class matr(drif):
         entrance and exit, which might not be so accurate
         """
         if not fast:
-            x = np.array(x, dtype=float).reshape(6, -1)
+            x = ncp.array(x, dtype=ncp.float64).reshape(6, -1)
         x1p, y1p = x[1], x[3]
-        x = np.dot(self.tm, x)
+        x = ncp.dot(self.tm, x)
         x2p, y2p = x[1], x[3]
         xp, yp = (x1p + x2p) / 2, (y1p + y2p) / 2
-        x[4] += (np.sqrt(1.0 + np.square(xp) + np.square(yp)) - 1.0) * self.L
+        x[4] += (ncp.sqrt(1.0 + ncp.square(xp) + ncp.square(yp)) - 1.0) * self.L
         return x
 
 
@@ -425,10 +438,10 @@ class moni(drif):
 
     def __init__(self, name="BPM01", L=0, Dx=0, Dy=0, tilt=0, tag=[]):
         self.name = str(name)
-        self._L = float(L)
-        self._Dx = float(Dx)
-        self._Dy = float(Dy)
-        self._tilt = float(tilt)
+        self._L = ncp.float64(L)
+        self._Dx = ncp.float64(Dx)
+        self._Dy = ncp.float64(Dy)
+        self._tilt = ncp.float64(tilt)
         self._update()
 
 
@@ -462,13 +475,13 @@ class rfca(drif):
         tag=[],
     ):
         self.name = str(name)
-        self._L = float(L)
-        self._Dx = float(Dx)
-        self._Dy = float(Dy)
-        self._tilt = float(tilt)
-        self._voltage = float(voltage)
-        self._freq = float(freq)
-        self._phase = float(phase)
+        self._L = ncp.float64(L)
+        self._Dx = ncp.float64(Dx)
+        self._Dy = ncp.float64(Dy)
+        self._tilt = ncp.float64(tilt)
+        self._voltage = ncp.float64(voltage)
+        self._freq = ncp.float64(freq)
+        self._phase = ncp.float64(phase)
         self.tag = []
         self._update()
 
@@ -479,7 +492,7 @@ class rfca(drif):
     @voltage.setter
     def voltage(self, value):
         try:
-            self._voltage = float(value)
+            self._voltage = ncp.float64(value)
             self.update()
         except:
             raise RuntimeError("voltage must be float (or convertible)")
@@ -491,7 +504,7 @@ class rfca(drif):
     @freq.setter
     def freq(self, value):
         try:
-            self._freq = float(value)
+            self._freq = ncp.float64(value)
             self.update()
         except:
             raise RuntimeError("freq must be float (or convertible)")
@@ -503,7 +516,7 @@ class rfca(drif):
     @phase.setter
     def phase(self, value):
         try:
-            self._phase = float(value)
+            self._phase = ncp.float64(value)
             self.update()
         except:
             raise RuntimeError("phase must be float (or convertible)")
@@ -530,13 +543,13 @@ class kick(drif):
         self, name="K01", L=0, hkick=0, vkick=0, nkick=1, Dx=0, Dy=0, tilt=0, tag=[]
     ):
         self.name = str(name)
-        self._L = float(L)
-        self._hkick = float(hkick)
-        self._vkick = float(vkick)
+        self._L = ncp.float64(L)
+        self._hkick = ncp.float64(hkick)
+        self._vkick = ncp.float64(vkick)
         self._nkick = int(nkick)
-        self._Dx = float(Dx)
-        self._Dy = float(Dy)
-        self._tilt = float(tilt)
+        self._Dx = ncp.float64(Dx)
+        self._Dy = ncp.float64(Dy)
+        self._tilt = ncp.float64(tilt)
         self.tag = tag
         self._update()
 
@@ -556,7 +569,7 @@ class kick(drif):
     @hkick.setter
     def hkick(self, value):
         try:
-            self._hkick = float(value)
+            self._hkick = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("hkick must be float (or convertible)")
@@ -568,7 +581,7 @@ class kick(drif):
     @vkick.setter
     def vkick(self, value):
         try:
-            self._vkick = float(value)
+            self._vkick = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("vkick must be float (or convertible)")
@@ -595,10 +608,10 @@ class kick(drif):
         g = 1.351207191959657328
         d = -1.702414383919314656
         self._dL = self.L / self.nkick
-        self._Ma = np.eye(6)
+        self._Ma = ncp.eye(6)
         self._Ma[0, 1] = a * self._dL
         self._Ma[2, 3] = self._Ma[0, 1]
-        self._Mb = np.eye(6)
+        self._Mb = ncp.eye(6)
         self._Mb[0, 1] = b * self._dL
         self._Mb[2, 3] = self._Mb[0, 1]
         self._KhLg = g * self.hkick / self.nkick
@@ -608,11 +621,11 @@ class kick(drif):
 
     def sympass4(self, x, fast=1):
         if not fast:
-            x = np.array(x, dtype=float).reshape(6, -1)
+            x = ncp.array(x, dtype=ncp.float64).reshape(6, -1)
         if self.hkick == 0 and self.vkick == 0:
             return super(kick, self).sympass4(x)
         if self.tilt != 0:
-            x = np.dot(rotmat(self.tilt), x)
+            x = ncp.dot(rotmat(self.tilt), x)
         if self.L != 0:
             S = 0
             for i in xrange(self.nkick):
@@ -629,13 +642,13 @@ class kick(drif):
                 x = self._Ma.dot(x)
                 x2p, y2p = x[1], x[3]
                 xp, yp = (x1p + x2p) / 2, (y1p + y2p) / 2
-                S += np.sqrt(1.0 + np.square(xp) + np.square(yp)) * self._dL
+                S += ncp.sqrt(1.0 + ncp.square(xp) + ncp.square(yp)) * self._dL
             x[4] += S - self.L
         else:
             x[1] += self.hkick / (1 + x[5])
             x[3] += self.vkick / (1 + x[5])
         if self.tilt != 0:
-            x = np.dot(rotmat(-self.tilt), x)
+            x = ncp.dot(rotmat(-self.tilt), x)
         return x
 
 
@@ -663,11 +676,11 @@ class aper(drif):
         self, name="APER", L=0, aper=[-1.0, 1.0, -1.0, 1.0], Dx=0, Dy=0, tilt=0, tag=[]
     ):
         self.name = str(name)
-        self._L = float(L)
-        self._aper = np.array(aper, float)
-        self._Dx = float(Dx)
-        self._Dy = float(Dy)
-        self._tilt = float(tilt)
+        self._L = ncp.float64(L)
+        self._aper = ncp.array(aper, ncp.float64)
+        self._Dx = ncp.float64(Dx)
+        self._Dy = ncp.float64(Dy)
+        self._tilt = ncp.float64(tilt)
         self.tag = tag
         self._update()
 
@@ -678,7 +691,7 @@ class aper(drif):
     @aper.setter
     def aper(self, value):
         try:
-            self._aper = np.array(value, float)
+            self._aper = ncp.array(value, ncp.float64)
             self._update()
         except:
             raise RuntimeError("aper must be 4 floats (or convertible)")
@@ -701,11 +714,11 @@ class aper(drif):
         x = super(aper,self).sympass4(x0)
         survived = chkap(x,xap=(self.aper[0],self.aper[1]),
                          yap=(self.aper[2],self.aper[3]))
-        survived = np.array(survived)[0]
+        survived = ncp.array(survived)[0]
         for i,si in enumerate(survived):
             if not si:
-                x[0,i] = np.nan
-                x[2,i] = np.nan
+                x[0,i] = ncp.nan
+                x[2,i] = ncp.nan
         return x
     """
 
@@ -729,12 +742,12 @@ class octu(drif):
 
     def __init__(self, name="OCT01", L=0, K3=0, nkick=4, Dx=0, Dy=0, tilt=0, tag=[]):
         self.name = str(name)
-        self._L = float(L)
-        self._K3 = float(K3)
+        self._L = ncp.float64(L)
+        self._K3 = ncp.float64(K3)
         self._nkick = int(nkick)
-        self._Dx = float(Dx)
-        self._Dy = float(Dy)
-        self._tilt = float(tilt)
+        self._Dx = ncp.float64(Dx)
+        self._Dy = ncp.float64(Dy)
+        self._tilt = ncp.float64(tilt)
         self.tag = tag
         self._update()
 
@@ -753,7 +766,7 @@ class octu(drif):
     @K3.setter
     def K3(self, value):
         try:
-            self._K3 = float(value)
+            self._K3 = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("K3 must be float (or convertible)")
@@ -781,10 +794,10 @@ class octu(drif):
         g = 1.351207191959657328
         d = -1.702414383919314656
         self._dL = self.L / self.nkick
-        self._Ma = np.eye(6)
+        self._Ma = ncp.eye(6)
         self._Ma[0, 1] = a * self._dL
         self._Ma[2, 3] = self._Ma[0, 1]
-        self._Mb = np.eye(6)
+        self._Mb = ncp.eye(6)
         self._Mb[0, 1] = b * self._dL
         self._Mb[2, 3] = self._Mb[0, 1]
         self._K3Lg = g * self.K3 * self._dL
@@ -795,7 +808,7 @@ class octu(drif):
         implement tracking with 4th order symplectic integrator
         """
         if not fast:
-            x = np.array(x, dtype=float).reshape(6, -1)
+            x = ncp.array(x, dtype=ncp.float64).reshape(6, -1)
         if self.K3 == 0 or self.L == 0:
             return super(octu, self).sympass4(x)
         else:
@@ -804,17 +817,17 @@ class octu(drif):
             if self.Dy != 0:
                 x[2] -= self.Dy
             if self.tilt != 0:
-                x = np.dot(rotmat(self.tilt), x)
+                x = ncp.dot(rotmat(self.tilt), x)
             S = 0.0
             for i in range(self.nkick):
                 x1p, y1p = x[1], x[3]
-                x = np.dot(self._Ma, x)
+                x = ncp.dot(self._Ma, x)
                 x[1] -= (
                     self._K3Lg
                     / 6
                     * (
-                        np.multiply(np.multiply(x[0], x[0]), x[0])
-                        - 3 * np.multiply(x[0], np.multiply(x[2], x[2]))
+                        ncp.multiply(ncp.multiply(x[0], x[0]), x[0])
+                        - 3 * ncp.multiply(x[0], ncp.multiply(x[2], x[2]))
                     )
                     / (1.0 + x[5])
                 )
@@ -822,18 +835,18 @@ class octu(drif):
                     self._K3Lg
                     / 6
                     * (
-                        np.multiply(np.multiply(x[2], x[2]), x[2])
-                        - 3 * np.multiply(x[2], np.multiply(x[0], x[0]))
+                        ncp.multiply(ncp.multiply(x[2], x[2]), x[2])
+                        - 3 * ncp.multiply(x[2], ncp.multiply(x[0], x[0]))
                     )
                     / (1.0 + x[5])
                 )
-                x = np.dot(self._Mb, x)
+                x = ncp.dot(self._Mb, x)
                 x[1] -= (
                     self._K3Ld
                     / 6
                     * (
-                        np.multiply(np.multiply(x[0], x[0]), x[0])
-                        - 3 * np.multiply(x[0], np.multiply(x[2], x[2]))
+                        ncp.multiply(ncp.multiply(x[0], x[0]), x[0])
+                        - 3 * ncp.multiply(x[0], ncp.multiply(x[2], x[2]))
                     )
                     / (1.0 + x[5])
                 )
@@ -841,18 +854,18 @@ class octu(drif):
                     self._K3Ld
                     / 6
                     * (
-                        np.multiply(np.multiply(x[2], x[2]), x[2])
-                        - 3 * np.multiply(x[2], np.multiply(x[0], x[0]))
+                        ncp.multiply(ncp.multiply(x[2], x[2]), x[2])
+                        - 3 * ncp.multiply(x[2], ncp.multiply(x[0], x[0]))
                     )
                     / (1.0 + x[5])
                 )
-                x = np.dot(self._Mb, x)
+                x = ncp.dot(self._Mb, x)
                 x[1] -= (
                     self._K3Lg
                     / 6
                     * (
-                        np.multiply(np.multiply(x[0], x[0]), x[0])
-                        - 3 * np.multiply(x[0], np.multiply(x[2], x[2]))
+                        ncp.multiply(ncp.multiply(x[0], x[0]), x[0])
+                        - 3 * ncp.multiply(x[0], ncp.multiply(x[2], x[2]))
                     )
                     / (1.0 + x[5])
                 )
@@ -860,27 +873,27 @@ class octu(drif):
                     self._K3Lg
                     / 6
                     * (
-                        np.multiply(np.multiply(x[2], x[2]), x[2])
-                        - 3 * np.multiply(x[2], np.multiply(x[0], x[0]))
+                        ncp.multiply(ncp.multiply(x[2], x[2]), x[2])
+                        - 3 * ncp.multiply(x[2], ncp.multiply(x[0], x[0]))
                     )
                     / (1.0 + x[5])
                 )
-                x = np.dot(self._Ma, x)
+                x = ncp.dot(self._Ma, x)
                 x2p, y2p = x[1], x[3]
                 xp, yp = (x1p + x2p) / 2, (y1p + y2p) / 2
-                S += np.sqrt(1.0 + np.square(xp) + np.square(yp)) * self._dL
+                S += ncp.sqrt(1.0 + ncp.square(xp) + ncp.square(yp)) * self._dL
             if self.tilt != 0:
-                x = np.dot(rotmat(-self.tilt), x)
+                x = ncp.dot(rotmat(-self.tilt), x)
             if self.Dy != 0:
                 x[2] += self.Dy
             if self.Dx != 0:
                 x[0] += self.Dx
             x[4] += S - self.L
             return x
-        #    x[1] -= self.K3/6*(np.multiply(np.multiply(x[0],x[0]),x[0]) - \
-        #                         3*np.multiply(x[0],np.multiply(x[2],x[2])))/(1.+x[5])
-        #    x[3] -= self.K3/6*(np.multiply(np.multiply(x[2],x[2]),x[2]) - \
-        #                         3*np.multiply(x[2],np.multiply(x[0],x[0])))/(1.+x[5])
+        #    x[1] -= self.K3/6*(ncp.multiply(ncp.multiply(x[0],x[0]),x[0]) - \
+        #                         3*ncp.multiply(x[0],ncp.multiply(x[2],x[2])))/(1.+x[5])
+        #    x[3] -= self.K3/6*(ncp.multiply(ncp.multiply(x[2],x[2]),x[2]) - \
+        #                         3*ncp.multiply(x[2],ncp.multiply(x[0],x[0])))/(1.+x[5])
         #    return x
 
 
@@ -905,12 +918,12 @@ class sext(drif):
         self, name="SEXT01", L=0.25, K2=1, nkick=4, Dx=0, Dy=0, tilt=0, tag=[]
     ):
         self.name = str(name)
-        self._L = float(L)
-        self._K2 = float(K2)
+        self._L = ncp.float64(L)
+        self._K2 = ncp.float64(K2)
         self._nkick = int(nkick)
-        self._Dx = float(Dx)
-        self._Dy = float(Dy)
-        self._tilt = float(tilt)
+        self._Dx = ncp.float64(Dx)
+        self._Dy = ncp.float64(Dy)
+        self._tilt = ncp.float64(tilt)
         self.tag = []
         self._update()
 
@@ -929,7 +942,7 @@ class sext(drif):
     @K2.setter
     def K2(self, value):
         try:
-            self._K2 = float(value)
+            self._K2 = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("K2 must be float (or convertible)")
@@ -957,10 +970,10 @@ class sext(drif):
         g = 1.351207191959657328
         d = -1.702414383919314656
         self._dL = self.L / self.nkick
-        self._Ma = np.eye(6)
+        self._Ma = ncp.eye(6)
         self._Ma[0, 1] = a * self._dL
         self._Ma[2, 3] = self._Ma[0, 1]
-        self._Mb = np.eye(6)
+        self._Mb = ncp.eye(6)
         self._Mb[0, 1] = b * self._dL
         self._Mb[2, 3] = self._Mb[0, 1]
         self._K2Lg = g * self.K2 * self._dL
@@ -971,7 +984,7 @@ class sext(drif):
         implement tracking with 4th order symplectic integrator
         """
         if not fast:
-            x = np.array(x, dtype=float).reshape(6, -1)
+            x = ncp.array(x, dtype=ncp.float64).reshape(6, -1)
         if self.K2 == 0 or self.L == 0:
             return super(sext, self).sympass4(x)
         else:
@@ -980,40 +993,40 @@ class sext(drif):
             if self.Dy != 0:
                 x[2] -= self.Dy
             if self.tilt != 0:
-                x = np.dot(rotmat(self.tilt), x)
+                x = ncp.dot(rotmat(self.tilt), x)
             S = 0.0
             for i in range(self.nkick):
                 x1p, y1p = x[1], x[3]
-                x = np.dot(self._Ma, x)
+                x = ncp.dot(self._Ma, x)
                 x[1] -= (
                     self._K2Lg
                     / 2
-                    * (np.multiply(x[0], x[0]) - np.multiply(x[2], x[2]))
+                    * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
                     / (1.0 + x[5])
                 )
-                x[3] += self._K2Lg * (np.multiply(x[0], x[2])) / (1.0 + x[5])
-                x = np.dot(self._Mb, x)
+                x[3] += self._K2Lg * (ncp.multiply(x[0], x[2])) / (1.0 + x[5])
+                x = ncp.dot(self._Mb, x)
                 x[1] -= (
                     self._K2Ld
                     / 2
-                    * (np.multiply(x[0], x[0]) - np.multiply(x[2], x[2]))
+                    * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
                     / (1.0 + x[5])
                 )
-                x[3] += self._K2Ld * (np.multiply(x[0], x[2])) / (1.0 + x[5])
-                x = np.dot(self._Mb, x)
+                x[3] += self._K2Ld * (ncp.multiply(x[0], x[2])) / (1.0 + x[5])
+                x = ncp.dot(self._Mb, x)
                 x[1] -= (
                     self._K2Lg
                     / 2
-                    * (np.multiply(x[0], x[0]) - np.multiply(x[2], x[2]))
+                    * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
                     / (1.0 + x[5])
                 )
-                x[3] += self._K2Lg * (np.multiply(x[0], x[2])) / (1.0 + x[5])
-                x = np.dot(self._Ma, x)
+                x[3] += self._K2Lg * (ncp.multiply(x[0], x[2])) / (1.0 + x[5])
+                x = ncp.dot(self._Ma, x)
                 x2p, y2p = x[1], x[3]
                 xp, yp = (x1p + x2p) / 2, (y1p + y2p) / 2
-                S += np.sqrt(1.0 + np.square(xp) + np.square(yp)) * self._dL
+                S += ncp.sqrt(1.0 + ncp.square(xp) + ncp.square(yp)) * self._dL
             if self.tilt != 0:
-                x = np.dot(rotmat(-self.tilt), x)
+                x = ncp.dot(rotmat(-self.tilt), x)
             if self.Dy != 0:
                 x[2] += self.Dy
             if self.Dx != 0:
@@ -1053,14 +1066,14 @@ class kmap(drif):
         Bw=1.8,
     ):
         self.name = str(name)
-        self._L = float(L)
+        self._L = ncp.float64(L)
         self._kmap1fn = kmap1fn
         self._kmap2fn = kmap2fn
-        self._E = float(E)
+        self._E = ncp.float64(E)
         self._nkick = int(nkick)
-        self._Dx = float(Dx)
-        self._Dy = float(Dy)
-        self._tilt = float(tilt)
+        self._Dx = ncp.float64(Dx)
+        self._Dy = ncp.float64(Dy)
+        self._tilt = ncp.float64(tilt)
         self._Bw = Bw
         BRho = self.E * 1e9 / csp
         if self.kmap1fn:
@@ -1122,7 +1135,7 @@ class kmap(drif):
     @E.setter
     def E(self, value):
         try:
-            self._E = float(value)
+            self._E = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("E must be float (or convertible)")
@@ -1134,7 +1147,7 @@ class kmap(drif):
     @Bw.setter
     def Bw(self, value):
         try:
-            self._Bw = float(value)
+            self._Bw = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("Bw must be float (or convertible)")
@@ -1146,9 +1159,9 @@ class kmap(drif):
         then, if kick map unit is [micro-rad],
         it will be un-normailized by beam energy, and reset its unit as [field]
         """
-        tm = np.eye(6)
+        tm = ncp.eye(6)
         for m in range(4):
-            x0 = np.zeros(6)
+            x0 = ncp.zeros(6)
             x0[m] += dx
             x = self.sympass4(x0)
             tm[:, m] = x / dx
@@ -1176,13 +1189,13 @@ class kmap(drif):
             a = fid.readlines()
         except:
             raise IOError("I/O error: No such file or directory")
-        idlen = float(a[3].strip())
+        idlen = ncp.float64(a[3].strip())
         nx = int(a[5].strip())
         ny = int(a[7].strip())
-        thetax = np.empty((ny, nx))
-        thetay = np.empty((ny, nx))
-        tabx = np.array([float(x) for x in a[10].strip().split() if x != ""])
-        taby = np.empty(ny)
+        thetax = ncp.empty((ny, nx))
+        thetay = ncp.empty((ny, nx))
+        tabx = ncp.array([ncp.float64(x) for x in a[10].strip().split() if x != ""])
+        taby = ncp.empty(ny)
         if "micro-rad" in a[8]:
             unit = "kick"
         else:
@@ -1190,14 +1203,14 @@ class kmap(drif):
         # --- x-plane
         for m in range(11, 11 + ny):
             i = m - 11
-            linelist = [float(x) for x in a[m].strip().split() if x != ""]
+            linelist = [ncp.float64(x) for x in a[m].strip().split() if x != ""]
             taby[i] = linelist[0]
-            thetax[i] = np.array(linelist[1:])
+            thetax[i] = ncp.array(linelist[1:])
         # --- y-plane
         for m in range(14 + ny, 14 + 2 * ny):
             i = m - (14 + ny)
-            linelist = [float(x) for x in a[m].strip().split() if x != ""]
-            thetay[i] = np.array(linelist[1:])
+            linelist = [ncp.float64(x) for x in a[m].strip().split() if x != ""]
+            thetay[i] = ncp.array(linelist[1:])
         return {
             "x": tabx,
             "y": taby,
@@ -1211,7 +1224,7 @@ class kmap(drif):
         Kick-Drfit through ID
         """
         if not fast:
-            x = np.array(x, dtype=float).reshape(6, -1)
+            x = ncp.array(x, dtype=ncp.float64).reshape(6, -1)
         dl = self.L / (self.nkick + 1)
         BRho = self.E * 1e9 * (1.0 + x[5]) / csp
         if self.Dx != 0:
@@ -1223,7 +1236,7 @@ class kmap(drif):
         S = 0.0
         x[0] += x[1] * dl
         x[2] += x[3] * dl
-        S += np.sqrt(1.0 + np.square(x[1]) + np.square(x[3])) * dl
+        S += ncp.sqrt(1.0 + ncp.square(x[1]) + ncp.square(x[3])) * dl
         for m in xrange(self.nkick):
             if self._kmap1:
                 kx = interp2d(
@@ -1246,7 +1259,7 @@ class kmap(drif):
                 x[3] += ky / BRho / BRho / self.nkick
             x[0] += x[1] * dl
             x[2] += x[3] * dl
-            S += np.sqrt(1.0 + np.square(x[1]) + np.square(x[3])) * dl
+            S += ncp.sqrt(1.0 + ncp.square(x[1]) + ncp.square(x[3])) * dl
         x[4] += S - self.L
         if self.tilt != 0:
             x = rotmat(-self.tilt).dot(x)
@@ -1298,18 +1311,18 @@ class bend(drif):
         tag=[],
     ):
         self.name = str(name)
-        self._L = float(L)
-        self._angle = float(angle)
-        self._e1 = float(e1)
-        self._e2 = float(e2)
-        self._K1 = float(K1)
-        self._K2 = float(K2)
+        self._L = ncp.float64(L)
+        self._angle = ncp.float64(angle)
+        self._e1 = ncp.float64(e1)
+        self._e2 = ncp.float64(e2)
+        self._K1 = ncp.float64(K1)
+        self._K2 = ncp.float64(K2)
         self._nkick = int(nkick)
-        self._Dx = float(Dx)
-        self._Dy = float(Dy)
-        self._tilt = float(tilt)
-        self._hgap = float(hgap)
-        self._fint = float(fint)
+        self._Dx = ncp.float64(Dx)
+        self._Dy = ncp.float64(Dy)
+        self._tilt = ncp.float64(tilt)
+        self._hgap = ncp.float64(hgap)
+        self._fint = ncp.float64(fint)
         self.tag = []
         self._update()
 
@@ -1330,7 +1343,7 @@ class bend(drif):
     @angle.setter
     def angle(self, value):
         try:
-            self._angle = float(value)
+            self._angle = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("angle must be non-zero float (or convertible)")
@@ -1342,7 +1355,7 @@ class bend(drif):
     @e1.setter
     def e1(self, value):
         try:
-            self._e1 = float(value)
+            self._e1 = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("e1 must be float (or convertible)")
@@ -1354,7 +1367,7 @@ class bend(drif):
     @e2.setter
     def e2(self, value):
         try:
-            self._e2 = float(value)
+            self._e2 = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("e2 must be float (or convertible)")
@@ -1366,7 +1379,7 @@ class bend(drif):
     @K1.setter
     def K1(self, value):
         try:
-            self._K1 = float(value)
+            self._K1 = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("K1 must be float (or convertible)")
@@ -1378,7 +1391,7 @@ class bend(drif):
     @K2.setter
     def K2(self, value):
         try:
-            self._K2 = float(value)
+            self._K2 = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("K2 must be float (or convertible)")
@@ -1390,7 +1403,7 @@ class bend(drif):
     @hgap.setter
     def hgap(self, value):
         try:
-            self._hgap = float(value)
+            self._hgap = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("hgap must be float (or convertible)")
@@ -1402,7 +1415,7 @@ class bend(drif):
     @fint.setter
     def fint(self, value):
         try:
-            self._fint = float(value)
+            self._fint = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("fint must be float (or convertible)")
@@ -1413,44 +1426,44 @@ class bend(drif):
 
     def _transmatrix(self):
         kx = self.K1 + 1 / (self._R * self._R)
-        self._tm = np.eye(6)
+        self._tm = ncp.eye(6)
         if kx > 0:
-            k = np.sqrt(kx)
+            k = ncp.sqrt(kx)
             p = k * self.L
-            self._tm[0:2, 0:2] = np.array(
-                [[np.cos(p), np.sin(p) / k], [-k * np.sin(p), np.cos(p)]]
+            self._tm[0:2, 0:2] = ncp.array(
+                [[ncp.cos(p), ncp.sin(p) / k], [-k * ncp.sin(p), ncp.cos(p)]]
             )
-            self._tm[0:2, 5:6] = np.array(
-                [[(1 - np.cos(p)) / (self._R * kx)], [np.sin(p) / (self._R * k)]]
+            self._tm[0:2, 5:6] = ncp.array(
+                [[(1 - ncp.cos(p)) / (self._R * kx)], [ncp.sin(p) / (self._R * k)]]
             )
             self._tm[4, 0] = self.tm[1, 5]
             self._tm[4, 1] = self.tm[0, 5]
-            self._tm[4, 5] = (k * self.L - np.sin(p)) / self._R / self._R / k / kx
+            self._tm[4, 5] = (k * self.L - ncp.sin(p)) / self._R / self._R / k / kx
         elif kx < 0:
-            k = np.sqrt(-kx)
+            k = ncp.sqrt(-kx)
             p = k * self.L
-            self._tm[0:2, 0:2] = np.array(
-                [[np.cosh(p), np.sinh(p) / k], [k * np.sinh(p), np.cosh(p)]]
+            self._tm[0:2, 0:2] = ncp.array(
+                [[ncp.cosh(p), ncp.sinh(p) / k], [k * ncp.sinh(p), ncp.cosh(p)]]
             )
-            self._tm[0:2, 5:6] = np.array(
-                [[(np.cosh(p) - 1) / (-self._R * kx)], [np.sinh(p) / (self._R * k)]]
+            self._tm[0:2, 5:6] = ncp.array(
+                [[(ncp.cosh(p) - 1) / (-self._R * kx)], [ncp.sinh(p) / (self._R * k)]]
             )
             self._tm[4, 0] = self.tm[1, 5]
             self._tm[4, 1] = self.tm[0, 5]
-            self._tm[4, 5] = (k * self.L - np.sinh(p)) / self._R / self._R / k / kx
+            self._tm[4, 5] = (k * self.L - ncp.sinh(p)) / self._R / self._R / k / kx
         else:
             self._tm[0, 1] = self.L
         if self.K1 > 0:
-            k = np.sqrt(self.K1)
+            k = ncp.sqrt(self.K1)
             p = k * self.L
-            self._tm[2:4, 2:4] = np.array(
-                [[np.cosh(p), np.sinh(p) / k], [k * np.sinh(p), np.cosh(p)]]
+            self._tm[2:4, 2:4] = ncp.array(
+                [[ncp.cosh(p), ncp.sinh(p) / k], [k * ncp.sinh(p), ncp.cosh(p)]]
             )
         elif self.K1 < 0:
-            k = np.sqrt(-self.K1)
+            k = ncp.sqrt(-self.K1)
             p = k * self.L
-            self._tm[2:4, 2:4] = np.array(
-                [[np.cos(p), np.sin(p) / k], [-k * np.sin(p), np.cos(p)]]
+            self._tm[2:4, 2:4] = ncp.array(
+                [[ncp.cos(p), ncp.sin(p) / k], [-k * ncp.sin(p), ncp.cos(p)]]
             )
         else:
             self._tm[2, 3] = self.L
@@ -1461,16 +1474,16 @@ class bend(drif):
                 / self._R
                 * self.hgap
                 * self.fint
-                * (1 + np.sin(self.e1) ** 2)
-                / np.cos(self.e1)
+                * (1 + ncp.sin(self.e1) ** 2)
+                / ncp.cos(self.e1)
                 * 2
             )
         else:
             vf = 0
         if self.e1 != 0 or vf != 0:
-            m1 = np.eye(6)
-            m1[1, 0] = np.tan(self.e1) / self._R
-            m1[3, 2] = -np.tan(self.e1 + vf) / self._R
+            m1 = ncp.eye(6)
+            m1[1, 0] = ncp.tan(self.e1) / self._R
+            m1[3, 2] = -ncp.tan(self.e1 + vf) / self._R
             self._m1 = m1
             self._tm = self.tm.dot(m1)
         # exit
@@ -1480,16 +1493,16 @@ class bend(drif):
                 / self._R
                 * self.hgap
                 * self.fint
-                * (1 + np.sin(self.e2) ** 2)
-                / np.cos(self.e2)
+                * (1 + ncp.sin(self.e2) ** 2)
+                / ncp.cos(self.e2)
                 * 2
             )
         else:
             vf = 0
         if self.e1 != 0 or vf != 0:
-            m2 = np.eye(6)
-            m2[1, 0] = np.tan(self.e2) / self._R
-            m2[3, 2] = -np.tan(self.e2 + vf) / self._R
+            m2 = ncp.eye(6)
+            m2[1, 0] = ncp.tan(self.e2) / self._R
+            m2[3, 2] = -ncp.tan(self.e2 + vf) / self._R
             self._m2 = m2
             self._tm = m2.dot(self.tm)
         if self.tilt != 0.0:
@@ -1518,10 +1531,10 @@ class bend(drif):
         g = 1.351207191959657328
         d = -1.702414383919314656
         self._dL = self.L / self.nkick
-        self._Ma = np.eye(6)
+        self._Ma = ncp.eye(6)
         self._Ma[0, 1] = a * self._dL
         self._Ma[2, 3] = self._Ma[0, 1]
-        self._Mb = np.eye(6)
+        self._Mb = ncp.eye(6)
         self._Mb[0, 1] = b * self._dL
         self._Mb[2, 3] = self._Mb[0, 1]
         self._Lg = g * self._dL
@@ -1536,7 +1549,7 @@ class bend(drif):
         implement tracking with 4yh order symplectic integrator
         """
         if not fast:
-            x = np.array(x, dtype=float).reshape(6, -1)
+            x = ncp.array(x, dtype=ncp.float64).reshape(6, -1)
         S = 0.0
         if self.Dx != 0:
             x[0] -= self.Dx
@@ -1553,39 +1566,39 @@ class bend(drif):
             x[1] -= (
                 self._K2Lg
                 / 2
-                * (np.multiply(x[0], x[0]) - np.multiply(x[2], x[2]))
+                * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
                 / (1 + x[5])
                 + self._K1Lg * x[0] / (1 + x[5])
                 - self._Lg * x[5] / self._R
                 + self._Lg * x[0] / self._R**2
             )
-            x[3] += self._K2Lg * (np.multiply(x[0], x[2])) / (
+            x[3] += self._K2Lg * (ncp.multiply(x[0], x[2])) / (
                 1 + x[5]
             ) + self._K1Lg * x[2] / (1 + x[5])
             x = self._Mb.dot(x)
             x[1] -= (
                 self._K2Ld
                 / 2
-                * (np.multiply(x[0], x[0]) - np.multiply(x[2], x[2]))
+                * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
                 / (1 + x[5])
                 + self._K1Ld * x[0] / (1 + x[5])
                 - self._Ld * x[5] / self._R
                 + self._Ld * x[0] / self._R**2
             )
-            x[3] += self._K2Ld * (np.multiply(x[0], x[2])) / (
+            x[3] += self._K2Ld * (ncp.multiply(x[0], x[2])) / (
                 1 + x[5]
             ) + self._K1Ld * x[2] / (1 + x[5])
             x = self._Mb.dot(x)
             x[1] -= (
                 self._K2Lg
                 / 2
-                * (np.multiply(x[0], x[0]) - np.multiply(x[2], x[2]))
+                * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
                 / (1 + x[5])
                 + self._K1Lg * x[0] / (1 + x[5])
                 - self._Lg * x[5] / self._R
                 + self._Lg * x[0] / self._R**2
             )
-            x[3] += self._K2Lg * (np.multiply(x[0], x[2])) / (
+            x[3] += self._K2Lg * (ncp.multiply(x[0], x[2])) / (
                 1 + x[5]
             ) + self._K1Lg * x[2] / (1 + x[5])
             x = self._Ma.dot(x)
@@ -1594,8 +1607,8 @@ class bend(drif):
             xp, yp = (x1p + x2p) / 2, (y1p + y2p) / 2
             xav = (x1 + x2) / 2
             S += (
-                np.multiply(
-                    np.sqrt(1.0 + np.square(xp) + np.square(yp)), (1 + xav / self._R)
+                ncp.multiply(
+                    ncp.sqrt(1.0 + ncp.square(xp) + ncp.square(yp)), (1 + xav / self._R)
                 )
                 * self._dL
             )
@@ -1630,12 +1643,12 @@ class wigg(drif):
 
     def __init__(self, name="WG01", L=1, Bw=1, E=3, Dx=0, Dy=0, tilt=0, tag=[]):
         self.name = str(name)
-        self._L = float(L)
-        self._Bw = float(Bw)
-        self._E = float(E)
-        self._Dx = float(Dx)
-        self._Dy = float(Dy)
-        self._tilt = float(tilt)
+        self._L = ncp.float64(L)
+        self._Bw = ncp.float64(Bw)
+        self._E = ncp.float64(E)
+        self._Dx = ncp.float64(Dx)
+        self._Dy = ncp.float64(Dy)
+        self._tilt = ncp.float64(tilt)
         self.tag = tag
         self.update()
 
@@ -1654,7 +1667,7 @@ class wigg(drif):
     @Bw.setter
     def Bw(self, value):
         try:
-            self._Bw = float(value)
+            self._Bw = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("Bw must be float (or convertible)")
@@ -1666,18 +1679,21 @@ class wigg(drif):
     @E.setter
     def E(self, value):
         try:
-            self._E = float(value)
+            self._E = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("E must be float (or convertible)")
 
     def _transmatrix(self):
         rhoinv = self.Bw / (self.E * 1e9) * csp
-        k = abs(rhoinv) / np.sqrt(2.0)
+        k = abs(rhoinv) / ncp.sqrt(2.0)
         p = k * self.L
-        self._tm = np.eye(6)
+        self._tm = ncp.eye(6)
         self._tm[0, 1] = self.L
-        self._tm[2:4, 2:4] = [[np.cos(p), np.sin(p) / k], [-k * np.sin(p), np.cos(p)]]
+        self._tm[2:4, 2:4] = [
+            [ncp.cos(p), ncp.sin(p) / k],
+            [-k * ncp.sin(p), ncp.cos(p)],
+        ]
 
         if self.tilt != 0.0:
             r1 = rotmat(-self.tilt)
@@ -1711,7 +1727,7 @@ class beamline(object):
         E=3,
     ):
         self._bl = [ele for ele in flatten(bl)]
-        self._E = float(E)
+        self._E = ncp.float64(E)
         self._betax0, self._alfax0, self._betay0, self._alfay0 = (
             betax0,
             alfax0,
@@ -1724,9 +1740,9 @@ class beamline(object):
             etay0,
             etayp0,
         )
-        self._emitx = float(emitx)
-        self._emity = float(emity)
-        self._sige = float(sige)
+        self._emitx = ncp.float64(emitx)
+        self._emity = ncp.float64(emity)
+        self._sige = ncp.float64(sige)
         self._update()
 
     @property
@@ -1736,7 +1752,7 @@ class beamline(object):
     @E.setter
     def E(self, value):
         try:
-            self._E = float(value)
+            self._E = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("E must be float (or convertible)")
@@ -1760,7 +1776,7 @@ class beamline(object):
     @betax0.setter
     def betax0(self, value):
         try:
-            self._betax0 = float(value)
+            self._betax0 = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("betax0 must be float (or convertible)")
@@ -1772,7 +1788,7 @@ class beamline(object):
     @alfax0.setter
     def alfax0(self, value):
         try:
-            self._alfax0 = float(value)
+            self._alfax0 = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("alfax0 must be float (or convertible)")
@@ -1784,7 +1800,7 @@ class beamline(object):
     @betay0.setter
     def betay0(self, value):
         try:
-            self._betay0 = float(value)
+            self._betay0 = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("betay0 must be float (or convertible)")
@@ -1796,7 +1812,7 @@ class beamline(object):
     @alfay0.setter
     def alfay0(self, value):
         try:
-            self._alfay0 = float(value)
+            self._alfay0 = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("alfay0 must be float (or convertible)")
@@ -1808,7 +1824,7 @@ class beamline(object):
     @etax0.setter
     def etax0(self, value):
         try:
-            self._etax0 = float(value)
+            self._etax0 = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("etax0 must be float (or convertible)")
@@ -1820,7 +1836,7 @@ class beamline(object):
     @etaxp0.setter
     def etaxp0(self, value):
         try:
-            self._etaxp0 = float(value)
+            self._etaxp0 = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("etaxp0 must be float (or convertible)")
@@ -1832,7 +1848,7 @@ class beamline(object):
     @etay0.setter
     def etay0(self, value):
         try:
-            self._etay0 = float(value)
+            self._etay0 = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("etay0 must be float (or convertible)")
@@ -1844,7 +1860,7 @@ class beamline(object):
     @etayp0.setter
     def etayp0(self, value):
         try:
-            self._etayp0 = float(value)
+            self._etayp0 = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("etayp0 must be float (or convertible)")
@@ -1856,7 +1872,7 @@ class beamline(object):
     @emitx.setter
     def emitx(self, value):
         try:
-            self._emitx = float(value)
+            self._emitx = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("emitx must be float (or convertible)")
@@ -1868,7 +1884,7 @@ class beamline(object):
     @emity.setter
     def emity(self, value):
         try:
-            self._emity = float(value)
+            self._emity = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("emity must be float (or convertible)")
@@ -1880,7 +1896,7 @@ class beamline(object):
     @sige.setter
     def sige(self, value):
         try:
-            self._sige = float(value)
+            self._sige = ncp.float64(value)
             self._update()
         except:
             raise RuntimeError("sige must be float (or convertible)")
@@ -1955,11 +1971,11 @@ class beamline(object):
         self._twiss()
         self._disp()
         self._sigx = [
-            np.sqrt(self.betax[m] * self.emitx * 1e-9) + abs(self.etax[m]) * self.sige
+            ncp.sqrt(self.betax[m] * self.emitx * 1e-9) + abs(self.etax[m]) * self.sige
             for m in range(len(self.s))
         ]
         self._sigy = [
-            np.sqrt(self.betay[m] * self.emity * 1e-9) for m in range(len(self.s))
+            ncp.sqrt(self.betay[m] * self.emity * 1e-9) for m in range(len(self.s))
         ]
 
     def __repr__(self):
@@ -2020,7 +2036,7 @@ class beamline(object):
         s = [0]
         for elem in self.bl:
             s.append(s[-1] + elem.L)
-        self._s = np.array(s)
+        self._s = ncp.array(s)
         self._L = s[-1]
 
     def _twiss(self):
@@ -2029,16 +2045,16 @@ class beamline(object):
         betax/y, alfax/y are 1D array, duplicate data are kept for convinence
         """
         self._mux, self._muy = [0.0], [0.0]
-        self._twx = np.array(
+        self._twx = ncp.array(
             [self.betax0, self.alfax0, (1 + self.alfax0 * self.alfax0) / self.betax0],
-            float,
+            ncp.float64,
         ).reshape(3, 1)
-        self._twy = np.array(
+        self._twy = ncp.array(
             [self.betay0, self.alfay0, (1 + self.alfay0 * self.alfay0) / self.betay0],
-            float,
+            ncp.float64,
         ).reshape(3, 1)
-        self._dxy = np.array(
-            [self.etax0, self.etaxp0, self.etay0, self.etayp0, 1], float
+        self._dxy = ncp.array(
+            [self.etax0, self.etaxp0, self.etay0, self.etayp0, 1], ncp.float64
         ).reshape(-1, 1)
         for elem in self.bl:
             mx = elem.tm[0:2, 0:2]
@@ -2073,8 +2089,8 @@ class beamline(object):
         get dispersion along s
         """
         for elem in self.bl:
-            m = np.take(
-                np.take(elem.tm, [0, 1, 2, 3, 5], axis=0), [0, 1, 2, 3, 5], axis=1
+            m = ncp.take(
+                ncp.take(elem.tm, [0, 1, 2, 3, 5], axis=0), [0, 1, 2, 3, 5], axis=1
             )
             self._dxy = np.append(
                 self._dxy, m.dot(self._dxy[:, -1]).reshape(-1, 1), axis=1
@@ -2136,13 +2152,13 @@ class beamline(object):
         """
         get the s index where s0 is in-between
         """
-        s0 = float(s0)
+        s0 = ncp.float64(s0)
         if s0 <= 0:
             return 0
         elif s0 >= self.L:
             return -1
         else:
-            m = np.nonzero(self.s >= s0)[0][0]
+            m = ncp.nonzero(self.s >= s0)[0][0]
             return m - 1, m
 
     def getIndex(self, types, prefix="", suffix="", include="", exclude=""):
@@ -2242,7 +2258,7 @@ class beamline(object):
                 print("unknown type: %s" % e.__class__.__name__)
                 pass
             s += [s[-1] + e.L]
-        plt.plot(s, np.zeros_like(s) + surflvl, "k", linewidth=1.5)
+        plt.plot(s, ncp.zeros_like(s) + surflvl, "k", linewidth=1.5)
 
     def plttwiss(
         self,
@@ -2304,8 +2320,8 @@ class beamline(object):
         """
         plt.figure(figsize=figsize)
         unit = 1000.0
-        plt.plot(self.s, np.array(self.sigx) * unit, linewidth=2, label=r"$\sigma_x$")
-        plt.plot(self.s, np.array(self.sigy) * unit, linewidth=2, label=r"$\sigma_y$")
+        plt.plot(self.s, ncp.array(self.sigx) * unit, linewidth=2, label=r"$\sigma_x$")
+        plt.plot(self.s, ncp.array(self.sigy) * unit, linewidth=2, label=r"$\sigma_y$")
         self.pltmag(unit=max(self.sigx) * unit / 20, surflvl=surflvl)
         if srange:
             size = plt.axis()
@@ -2470,7 +2486,7 @@ class beamline(object):
             tmlist = [self.bl[j].tm for j in xrange(n[0])][::-1]
             alist.append(
                 matr(
-                    "M%04i" % imat, L=self.s[n[0]], tm=functools.reduce(np.dot, tmlist)
+                    "M%04i" % imat, L=self.s[n[0]], tm=functools.reduce(ncp.dot, tmlist)
                 )
             )
             imat += 1
@@ -2482,7 +2498,7 @@ class beamline(object):
                 matr(
                     "M%04i" % imat,
                     L=self.s[n[i + 1]] - self.s[ni + 1],
-                    tm=functools.reduce(np.dot, tmlist),
+                    tm=functools.reduce(ncp.dot, tmlist),
                 )
             )
             imat += 1
@@ -2494,7 +2510,7 @@ class beamline(object):
                 matr(
                     "M%04i" % imat,
                     L=self.L - self.s[n[-1] + 1],
-                    tm=functools.reduce(np.dot, tmlist),
+                    tm=functools.reduce(ncp.dot, tmlist),
                 )
             )
         return alist
@@ -2507,7 +2523,7 @@ class beamline(object):
                   if None (by default), tracking whole beamline
         """
         if not fast:
-            x0 = np.array(x0, dtype=float).reshape(6, -1)
+            x0 = ncp.array(x0, dtype=ncp.float64).reshape(6, -1)
         if startIndex and startIndex >= 0:
             sb = startIndex
         else:
@@ -2516,7 +2532,7 @@ class beamline(object):
             se = endIndex
         else:
             se = len(self.bl)
-        x = np.zeros((se - sb + 1, x0.shape[0], x0.shape[1]))
+        x = ncp.zeros((se - sb + 1, x0.shape[0], x0.shape[1]))
         x[0] = x0
         for i in xrange(sb, se):
             x0 = self.bl[i].sympass4(x0)
@@ -2537,14 +2553,14 @@ class beamline(object):
             se = len(self.bl)
         if se > sb:
             tmlist = [e.tm for e in self.bl[sb:se]][::-1]
-            R = functools.reduce(np.dot, tmlist)
+            R = functools.reduce(ncp.dot, tmlist)
         elif se < sb:
             tmlist1 = [e.tm for e in self.bl[sb:]]
             tmlist2 = [e.tm for e in self.bl[:se]]
             tmlist = tmlist1 + tmlist2
-            R = functools.reduce(np.dot, tmlist[::-1])
+            R = functools.reduce(ncp.dot, tmlist[::-1])
         else:
-            R = np.eye(6)
+            R = ncp.eye(6)
         return R
 
     def cmbdrf(self):
@@ -2579,7 +2595,7 @@ class cell(beamline):
         E:   float, beam energy in GeV (3 by default)
         kcouple: linear transverse coupling coefficient.
         """
-        self._E = float(E)
+        self._E = ncp.float64(E)
         self._bl = [ele for ele in flatten(bl)]
         self._kcouple = kcouple
         self._update()
@@ -2699,7 +2715,7 @@ class cell(beamline):
     @kcouple.setter
     def kcouple(self, value):
         try:
-            self._kcouple = float(value)
+            self._kcouple = ncp.float64(value)
             self.rad()
         except:
             raise RuntimeError("kcouple must be float (or convertible)")
@@ -2932,7 +2948,7 @@ class cell(beamline):
         sige = fractional energy spread
         emitx = horizonat emittance (nm)
         """
-        const = 55.0 / (32.0 * np.sqrt(3))
+        const = 55.0 / (32.0 * ncp.sqrt(3))
         re = 2.817940e-15  # unit:  m
         lam = 3.861592e-13  # unit: m
         grel = 1956.95 * self.E  # E in GeV
@@ -2946,8 +2962,8 @@ class cell(beamline):
                 e1 = elem.e1
                 e2 = elem.e2
                 R = elem.R
-                t1 = np.tan(e1) / R
-                t2 = np.tan(e2) / R
+                t1 = ncp.tan(e1) / R
+                t2 = ncp.tan(e2) / R
                 b0 = self.betax[i]
                 a0 = self.alfax[i]
                 eta0 = self.etax[i]
@@ -2956,10 +2972,10 @@ class cell(beamline):
                 a1 = a0 - b0 * t1
                 g1 = (1 + a1**2) / b0
                 if K + 1 / R**2 > 0:
-                    k = np.sqrt(K + 1 / R**2)
+                    k = ncp.sqrt(K + 1 / R**2)
                     p = k * L
-                    S = np.sin(p)
-                    C = np.cos(p)
+                    S = ncp.sin(p)
+                    C = ncp.cos(p)
                     eta2 = eta0 * C + etap1 * S / k + (1 - C) / (R * k**2)
                     av_eta = (
                         eta0 * S / p
@@ -2984,10 +3000,10 @@ class cell(beamline):
                         )
                     )
                 elif K + 1 / R**2 < 0:
-                    k = np.sqrt(-K - 1 / R**2)
+                    k = ncp.sqrt(-K - 1 / R**2)
                     p = k * L
-                    S = np.sinh(p)
-                    C = np.cosh(p)
+                    S = ncp.sinh(p)
+                    C = ncp.cosh(p)
                     eta2 = eta0 * C + etap1 * S / k + (1 - C) / (-R * k**2)
                     av_eta = (
                         eta0 * S / p
@@ -3029,7 +3045,7 @@ class cell(beamline):
         self._taux = self.tau0 / self.Jx
         self._tauy = self.tau0
         self._taue = self.tau0 / self.Je
-        self._sige = np.sqrt(
+        self._sige = ncp.sqrt(
             const * lam * grel**2 * self.I[2] / (2.0 * self.I[1] + self.I[3])
         )
         self._emitx = (
@@ -3037,11 +3053,11 @@ class cell(beamline):
         )  # nm
         self._emity = self.emitx * self.kcouple / (1 + self.kcouple)  # nm
         self._sigx = [
-            np.sqrt(self.betax[m] * self.emitx * 1e-9) + abs(self.etax[m]) * self.sige
+            ncp.sqrt(self.betax[m] * self.emitx * 1e-9) + abs(self.etax[m]) * self.sige
             for m in range(len(self.s))
         ]
         self._sigy = [
-            np.sqrt(self.betay[m] * self.emity * 1e-9) for m in range(len(self.s))
+            ncp.sqrt(self.betay[m] * self.emity * 1e-9) for m in range(len(self.s))
         ]
         if includeWig:
             # --- S.Y. Lee's book formulae
@@ -3054,12 +3070,12 @@ class cell(beamline):
                 rhow = dw.E * 1e9 / csp / dw.Bw
                 Uwi = 88.5 * E0**4 * dw.L / (2 * twopi * rhow**2)
                 Uw += Uwi
-                u3 += 8 * rho * Uwi / 3 / np.pi / rhow / self.U0
+                u3 += 8 * rho * Uwi / 3 / ncp.pi / rhow / self.U0
                 u2 += Uwi / self.U0
             self.Uw = Uw
             self.Ut = self.U0 + self.Uw
             self.emitxw = self.emitx / (1 + self.Uw / self.U0)
-            self.sigew = self.sige * np.sqrt((1.0 + u3) / (1.0 + u2))
+            self.sigew = self.sige * ncp.sqrt((1.0 + u3) / (1.0 + u2))
             self.tauw = self.tau0 * self.U0 / self.Ut
             self.tauxw = self.tauw / self.Jx
             self.tauyw = self.tauw
@@ -3082,7 +3098,7 @@ class cell(beamline):
         """
         isconvergent = False
         x1all = None
-        x0 = np.zeros(6)
+        x0 = ncp.zeros(6)
         x0[5] = fixedenergy
         for i in range(niter):
             x1all = self.eletrack(x0)
@@ -3115,7 +3131,7 @@ class cell(beamline):
 
     def dispersionTrack(
         self,
-        dE=np.linspace(-0.025, 0.025, 8),
+        dE=ncp.linspace(-0.025, 0.025, 8),
         deg=3,
         mp=True,
         verbose=False,
@@ -3156,11 +3172,11 @@ class cell(beamline):
                 x.append(a[1])
                 y.append(a[2])
                 dL.append(a[3])
-            idx = np.argsort(e)
-            e = np.array(e)[idx]
-            x = np.array(x)[idx]
-            y = np.array(y)[idx]
-            dL = np.array(dL)[idx]
+            idx = ncp.linalg.inv(e)
+            e = ncp.array(e)[idx]
+            x = ncp.array(x)[idx]
+            y = ncp.array(y)[idx]
+            dL = ncp.array(dL)[idx]
             self.dispx = np.polyfit(e, x, deg)
             self.dispy = np.polyfit(e, y, deg)
             self.alpha = np.polyfit(e, dL / self.L, deg)
@@ -3179,9 +3195,9 @@ class cell(beamline):
                 Yco.append(yco)
                 C.append(c)
                 dL.append(dl)
-            Xco = np.array(Xco)
-            Yco = np.array(Yco)
-            dL = np.array(dL)
+            Xco = ncp.array(Xco)
+            Yco = ncp.array(Yco)
+            dL = ncp.array(dL)
             self.dispx = np.polyfit(dE, Xco, deg=deg)
             self.dispy = np.polyfit(dE, Yco, deg=deg)
             self.alpha = np.polyfit(dE, dL / self.L, deg=deg)
@@ -3205,7 +3221,7 @@ class cell(beamline):
 
     def chromTrack(
         self,
-        dE=np.linspace(-0.025, 0.025, 16),
+        dE=ncp.linspace(-0.025, 0.025, 16),
         nturn=516,
         amp=1e-4,
         deg=4,
@@ -3217,15 +3233,15 @@ class cell(beamline):
         """
         get chromaticity by tracking
         """
-        # de = np.linspace(demin,demax,int(nde))
+        # de = ncp.linspace(demin,demax,int(nde))
         nde = len(dE)
-        xin = np.zeros((6, nde))
+        xin = ncp.zeros((6, nde))
         # if plane == 'x':
         xin[0] = nde * [amp]
         # else:
         xin[2] = nde * [amp]
         xin[5] = dE
-        tbt = np.zeros((nturn, 6, nde))
+        tbt = ncp.zeros((nturn, 6, nde))
         for i in xrange(nturn):
             xin = self.eletrack(xin)[-1]
             tbt[i] = xin
@@ -3252,11 +3268,11 @@ class cell(beamline):
             )
         for i in xrange(nde):
             if crossHalfInt:
-                a0 = np.array(csm * tbt[:, :4, i].transpose())
-                xpw0 = np.fft.fft(a0[0])
-                nu1 = pickPeak(np.abs(xpw0), rng=[0, 1])[0]
-                xpw0 = np.fft.fft(a0[1])
-                nu2 = pickPeak(np.abs(xpw0), rng=[0, 1])[0]
+                a0 = ncp.array(csm * tbt[:, :4, i].transpose())
+                xpw0 = ncp.fft.fft(a0[0])
+                nu1 = pickPeak(ncp.abs(xpw0), rng=[0, 1])[0]
+                xpw0 = ncp.fft.fft(a0[1])
+                nu2 = pickPeak(ncp.abs(xpw0), rng=[0, 1])[0]
                 nu.append([dE[i], nu1, nu2])
             else:
                 nu.append(
@@ -3266,12 +3282,12 @@ class cell(beamline):
                         naff(tbt[:, 2, i], ni=1, verbose=0, rng=rngy)[0][0],
                     ]
                 )
-        nu = np.array(nu)
+        nu = ncp.array(nu)
         chx = np.polyfit(nu[:, 0], nu[:, 1], deg)
         chy = np.polyfit(nu[:, 0], nu[:, 2], deg)
         if verbose:
-            nuxfit = np.polyval(chx, nu[:, 0])
-            nuyfit = np.polyval(chy, nu[:, 0])
+            nuxfit = ncp.polyval(chx, nu[:, 0])
+            nuyfit = ncp.polyval(chy, nu[:, 0])
             plt.figure(figsize=figsize)
             plt.plot(nu[:, 0], nuxfit, "b-", label=r"$\xi_{x,1}=%.2f$" % chx[-2], lw=2)
             plt.plot(nu[:, 0], nu[:, 1], "bo")
@@ -3291,8 +3307,8 @@ class cell(beamline):
         """
         l0, v0 = np.linalg.eig(self.R[:4, :4])
         self.nu_I, self.nu_II = (
-            np.arctan2(l0[0].imag, l0[0].real) / twopi,
-            np.arctan2(l0[2].imag, l0[2].real) / twopi,
+            ncp.arctan2(l0[0].imag, l0[0].real) / twopi,
+            ncp.arctan2(l0[2].imag, l0[2].real) / twopi,
         )
         bag, bagName = vect2beta(v0)
         bagx_I, bagy_I, bagx_II, bagy_II = (
@@ -3310,12 +3326,12 @@ class cell(beamline):
             bagy_II.append(t[:, 3])
             v0 = v1
         self.twx_I, self.twy_I = (
-            np.array(bagx_I).transpose(),
-            np.array(bagy_I).transpose(),
+            ncp.array(bagx_I).transpose(),
+            ncp.array(bagy_I).transpose(),
         )
         self.twx_II, self.twy_II = (
-            np.array(bagx_II).transpose(),
-            np.array(bagy_II).transpose(),
+            ncp.array(bagx_II).transpose(),
+            ncp.array(bagy_II).transpose(),
         )
         self.twx_I[3] = monoPhase(self.twx_I[3])
         self.twy_I[3] = monoPhase(self.twy_I[3])
@@ -3350,7 +3366,7 @@ class cell(beamline):
                             L=si, K1=ele.K1, angle=ele.angle * si / ele.L, e1=ele.e1
                         )
                     vm = fe.tm[:4, :4].dot(v0)
-                    t = np.array(vect2beta(vm)[0])
+                    t = ncp.array(vect2beta(vm)[0])
                     # --- twiss inside bend
                     b.append(t[0])
                     a.append(t[1])
@@ -3362,9 +3378,9 @@ class cell(beamline):
                     dxp.append(dxy[1])
                     dy.append(dxy[2])
                     dyp.append(dxy[3])
-                b = np.array(b)
-                a = np.array(a)
-                g = np.array(g)
+                b = ncp.array(b)
+                a = ncp.array(a)
+                g = ncp.array(g)
                 bx_I, ax_I, gx_I = b[:, 0], a[:, 0], g[:, 0]
                 by_I, ay_I, gy_I = b[:, 1], a[:, 1], g[:, 1]
                 bx_II, ax_II, gx_II = b[:, 2], a[:, 2], g[:, 2]
@@ -3447,17 +3463,17 @@ class cell(beamline):
         tmlist1 = [e.tm for e in self.bl[idx:]]
         tmlist2 = [e.tm for e in self.bl[:idx]]
         tmlist = tmlist1 + tmlist2
-        return functools.reduce(np.dot, tmlist[::-1])
+        return functools.reduce(ncp.dot, tmlist[::-1])
 
     def getf2vsskew(self, index, skews, dk=0.001, verbose=0):
         """
         coupled f2 coefficients vs. skew response matrix
         """
         nbpm, nskew = len(index), len(skews)
-        c1010, c0101 = np.zeros((nbpm, nskew)), np.zeros((nbpm, nskew))
-        c0110, c1001 = np.zeros((nbpm, nskew)), np.zeros((nbpm, nskew))
-        h1010r, h1010i = np.zeros((nbpm, nskew)), np.zeros((nbpm, nskew))
-        h1001r, h1001i = np.zeros((nbpm, nskew)), np.zeros((nbpm, nskew))
+        c1010, c0101 = ncp.zeros((nbpm, nskew)), ncp.zeros((nbpm, nskew))
+        c0110, c1001 = ncp.zeros((nbpm, nskew)), ncp.zeros((nbpm, nskew))
+        h1010r, h1010i = ncp.zeros((nbpm, nskew)), ncp.zeros((nbpm, nskew))
+        h1001r, h1001i = ncp.zeros((nbpm, nskew)), ncp.zeros((nbpm, nskew))
         for ik, skew in enumerate(skews):
             skew.K1 = dk
             self._update()
@@ -3506,21 +3522,21 @@ class cell(beamline):
         """
         R0 = []
         for i in index:
-            Rt = np.array(self.getOneTurnMatrix(i)[:4, :4])
-            Ri = np.vstack((Rt[:2, 2:], Rt[2:, :2])).flatten()
+            Rt = ncp.array(self.getOneTurnMatrix(i)[:4, :4])
+            Ri = ncp.vstack((Rt[:2, 2:], Rt[2:, :2])).flatten()
             R0.append(Ri)
-        R0 = np.array(R0).flatten()
+        R0 = ncp.array(R0).flatten()
         nskew = len(skews)
-        rm = np.zeros((len(R0), nskew))
+        rm = ncp.zeros((len(R0), nskew))
         for ik, skew in enumerate(skews):
             skew.K1 = dk
             self._update()
             R1 = []
             for i in index:
-                Rt = np.array(self.getOneTurnMatrix(i)[:4, :4])
-                Ri = np.vstack((Rt[:2, 2:], Rt[2:, :2])).flatten()
+                Rt = ncp.array(self.getOneTurnMatrix(i)[:4, :4])
+                Ri = ncp.vstack((Rt[:2, 2:], Rt[2:, :2])).flatten()
                 R1.append(Ri)
-            R1 = np.array(R1).flatten()
+            R1 = ncp.array(R1).flatten()
             dRdk = (R1 - R0) / dk
             rm[:, ik] = dRdk
             skew.K1 = 0
@@ -3554,28 +3570,29 @@ class cell(beamline):
             freqrf = rfca.freq
         self.Vrf = vt
         if hasattr(self, "Ut"):
-            self.phaserf = np.pi - np.arcsin(self.Ut * 1e3 / self.Vrf)
+            self.phaserf = ncp.pi - ncp.arcsin(self.Ut * 1e3 / self.Vrf)
         else:
-            self.phaserf = np.pi - np.arcsin(self.U0 * 1e3 / self.Vrf)
+            self.phaserf = ncp.pi - ncp.arcsin(self.U0 * 1e3 / self.Vrf)
         self.revfreq = csp / self.L
         self.h = int(round(freqrf / self.revfreq))
         self.freqrf = self.h * self.revfreq
         for rfca in rfcas:
             rfca.freq = self.freqrf
-        self.nus = np.sqrt(
+        self.nus = ncp.sqrt(
             self.h
             * self.Vrf
-            * abs(np.cos(self.phaserf) * self.alphac)
+            * abs(ncp.cos(self.phaserf) * self.alphac)
             / (twopi * self.E * 1e9)
         )
         # --- bucket height
-        Y = np.sqrt(
+        Y = ncp.sqrt(
             abs(
-                np.cos(self.phaserf) - (np.pi / 2 - self.phaserf) * np.sin(self.phaserf)
+                ncp.cos(self.phaserf)
+                - (ncp.pi / 2 - self.phaserf) * ncp.sin(self.phaserf)
             )
         )
-        self.bucketHeight = np.sqrt(
-            2.0 * self.Vrf / (self.E * 1e9 * np.pi * self.h * abs(self.alphac))
+        self.bucketHeight = ncp.sqrt(
+            2.0 * self.Vrf / (self.E * 1e9 * ncp.pi * self.h * abs(self.alphac))
         )
 
     def synHam(self, dE, phi, ho=False):
@@ -3590,11 +3607,11 @@ class cell(beamline):
                 1.0 / 2 * self.h * self.revfreq * self.alphac * dE**2
                 + self.revfreq
                 * self.Vrf
-                / (2 * np.pi * self.E * 1e9)
+                / (2 * ncp.pi * self.E * 1e9)
                 * (
-                    np.cos(phi)
-                    - np.cos(self.phaserf)
-                    + (phi - self.phaserf) * np.sin(self.phaserf)
+                    ncp.cos(phi)
+                    - ncp.cos(self.phaserf)
+                    + (phi - self.phaserf) * ncp.sin(self.phaserf)
                 )
             )
         else:
@@ -3606,11 +3623,11 @@ class cell(beamline):
                 + 1.0 / 4 * self.h * self.revfreq * self.hoalpha[-4] * dE**4
                 + self.revfreq
                 * self.Vrf
-                / (2 * np.pi * self.E * 1e9)
+                / (2 * ncp.pi * self.E * 1e9)
                 * (
-                    np.cos(phi)
-                    - np.cos(self.phaserf)
-                    + (phi - self.phaserf) * np.sin(self.phaserf)
+                    ncp.cos(phi)
+                    - ncp.cos(self.phaserf)
+                    + (phi - self.phaserf) * ncp.sin(self.phaserf)
                 )
             )
         return H
@@ -3661,7 +3678,7 @@ class cell(beamline):
                 mx, my, tx, ty = twmat(elem, s[j])
                 wx = twisstrans(tx, self.twx[:, i])
                 wy = twisstrans(ty, self.twy[:, i])
-                dx = mx.dot(np.take(self.dxy[:, i], [0, 1, 4], axis=0))
+                dx = mx.dot(ncp.take(self.dxy[:, i], [0, 1, 4], axis=0))
                 betax.append(wx[0])
                 alphax.append(wx[1])
                 gammax.append(wx[2])
@@ -3670,9 +3687,17 @@ class cell(beamline):
                 gammay.append(wy[2])
                 eta.append(dx[0])
                 etap.append(dx[1])
-            betax, alphax, gammax = np.array(betax), np.array(alphax), np.array(gammax)
-            betay, alphay, gammay = np.array(betay), np.array(alphay), np.array(gammay)
-            eta, etap = np.array(eta), np.array(etap)
+            betax, alphax, gammax = (
+                ncp.array(betax),
+                ncp.array(alphax),
+                ncp.array(gammax),
+            )
+            betay, alphay, gammay = (
+                ncp.array(betay),
+                ncp.array(alphay),
+                ncp.array(gammay),
+            )
+            eta, etap = ncp.array(eta), ncp.array(etap)
             if elem.__class__.__name__ == "quad":
                 dchx = -elem.K1 * sum(w * betax)
                 dchy = elem.K1 * sum(w * betay)
@@ -3708,8 +3733,8 @@ class cell(beamline):
                 b0y = self.twy[0, i]
                 b1x = self.twx[0, i + 1]
                 b1y = self.twy[0, i + 1]
-                dchx += h * b0x * np.tan(elem.e1) + h * b1x * np.tan(elem.e2)
-                dchy -= h * b0y * np.tan(elem.e1) + h * b1y * np.tan(elem.e2)
+                dchx += h * b0x * ncp.tan(elem.e1) + h * b1x * ncp.tan(elem.e2)
+                dchy -= h * b0y * ncp.tan(elem.e1) + h * b1y * ncp.tan(elem.e2)
                 chx += dchx
                 chy += dchy
                 chx0 += dchx
@@ -3732,11 +3757,15 @@ class cell(beamline):
         if minSextValue:
             self.svabs = 0
             for s in sexts:
-                self.svabs += np.abs(s[0].K2)
-            con = [["chx", float(ch[0])], ["chy", float(ch[1])], ["svabs", 0.0]]
+                self.svabs += ncp.abs(s[0].K2)
+            con = [
+                ["chx", ncp.float64(ch[0])],
+                ["chy", ncp.float64(ch[1])],
+                ["svabs", 0.0],
+            ]
             wgh = [1.0, 1.0, 0.5]
         else:
-            con = [["chx", float(ch[0])], ["chy", float(ch[1])]]
+            con = [["chx", ncp.float64(ch[0])], ["chy", ncp.float64(ch[1])]]
             wgh = [1.0, 1.0]
         optm(self, sexts, con, wgh)
         if hasattr(self, "svabs"):
@@ -3752,9 +3781,9 @@ class cell(beamline):
         if not hasattr(self, "chrm"):
             self.getChrm(self, var)
         self.chrom()
-        dk = np.linalg.lstsq(self.chrm, np.array(ch) - np.array([self.chx, self.chy]))[
-            0
-        ]
+        dk = ncp.linalg.lstsq(
+            self.chrm, ncp.array(ch) - ncp.array([self.chx, self.chy])
+        )[0]
         for i, v in enumerate(var):
             v.put("K2", v.K2 + dk[i])
         self.chrom()
@@ -3765,8 +3794,8 @@ class cell(beamline):
         """
         if not len(bpmIndex):
             bpmIndex = ring.getIndex("moni")
-        x = np.zeros((len(bpmIndex), nturns))
-        y = np.zeros((len(bpmIndex), nturns))
+        x = ncp.zeros((len(bpmIndex), nturns))
+        y = ncp.zeros((len(bpmIndex), nturns))
         for i in range(nturns):
             xall = self.eletrack(x0)
             x[:, i] = xall[bpmIndex, 0, 0]
@@ -3788,14 +3817,14 @@ class cell(beamline):
         if hasattr(self, "h1"):
             str0 += "\n=* First order driving terms *=\n"
             for k in self.h1.keys():
-                rr = float(np.real(self.h1[k]))
-                ii = float(np.imag(self.h1[k]))
+                rr = ncp.float64(ncp.real(self.h1[k]))
+                ii = ncp.float64(ncp.imag(self.h1[k]))
                 str0 += "%s = %15.6e %+15.6ej\n" % (k, rr, ii)
         if hasattr(self, "h2"):
             str0 += "\n=* Second order driving terms *=\n"
             for k in self.h2.keys():
-                rr = float(np.real(self.h2[k]))
-                ii = float(np.imag(self.h2[k]))
+                rr = ncp.float64(ncp.real(self.h2[k]))
+                ii = ncp.float64(ncp.imag(self.h2[k]))
                 str0 += "%s = %15.6e %+15.6ej\n" % (k, rr, ii)
         return str0
 
@@ -3809,8 +3838,8 @@ class cell(beamline):
             lgd = []
             for k in self.h1.keys():
                 plt.plot(
-                    [0, np.real(self.h1[k])],
-                    [0, np.imag(self.h1[k])],
+                    [0, ncp.real(self.h1[k])],
+                    [0, ncp.imag(self.h1[k])],
                     "-+",
                     linewidth=2,
                 )
@@ -3822,8 +3851,8 @@ class cell(beamline):
             lgd = []
             for k in self.h2.keys():
                 plt.plot(
-                    [0, np.real(self.h2[k])],
-                    [0, np.imag(self.h2[k])],
+                    [0, ncp.real(self.h2[k])],
+                    [0, ncp.imag(self.h2[k])],
                     "-+",
                     linewidth=2,
                 )
@@ -3843,7 +3872,7 @@ class cell(beamline):
         mx, my, tx, ty = twmat(ei, ei.L / 2)
         twx = twisstrans(tx, self.twx[:, i])
         twy = twisstrans(ty, self.twy[:, i])
-        dx = mx * np.take(self.dxy[:, i], [0, 1, 4], axis=0)
+        dx = mx * ncp.take(self.dxy[:, i], [0, 1, 4], axis=0)
         bxi, byi = twx[0, 0], twy[0, 0]
         dxi = dx[0, 0]
         if ei.L < 0:
@@ -3872,7 +3901,7 @@ class cell(beamline):
             bx, by, dx, mx, my = self.twmid(magIndexs[i])
             pl += [mag.L, bn, bx, by, dx, mx, my]
             tab.append(pl)
-        self.h12table = np.array(tab)
+        self.h12table = ncp.array(tab)
 
     def geth1(self):
         """
@@ -3908,15 +3937,15 @@ class cell(beamline):
                 K2Li = Li * bni
                 h11001 -= 2 * K2Li * dxi * bxi
                 h00111 += 2 * K2Li * dxi * byi
-                h20001 -= 2 * K2Li * dxi * bxi * np.exp(2j * muxi)
-                h00201 += 2 * K2Li * dxi * byi * np.exp(2j * muyi)
-                h10002 -= K2Li * dxi**2 * np.sqrt(bxi) * np.exp(1j * muxi)
+                h20001 -= 2 * K2Li * dxi * bxi * ncp.exp(2j * muxi)
+                h00201 += 2 * K2Li * dxi * byi * ncp.exp(2j * muyi)
+                h10002 -= K2Li * dxi**2 * ncp.sqrt(bxi) * ncp.exp(1j * muxi)
 
-                h21000 -= K2Li * bxi ** (3.0 / 2) * np.exp(1j * muxi)
-                h30000 -= K2Li * bxi ** (3.0 / 2) * np.exp(3j * muxi)
-                h10110 += K2Li * np.sqrt(bxi) * byi * np.exp(1j * muxi)
-                h10020 += K2Li * np.sqrt(bxi) * byi * np.exp(1j * (muxi - 2 * muyi))
-                h10200 += K2Li * np.sqrt(bxi) * byi * np.exp(1j * (muxi + 2 * muyi))
+                h21000 -= K2Li * bxi ** (3.0 / 2) * ncp.exp(1j * muxi)
+                h30000 -= K2Li * bxi ** (3.0 / 2) * ncp.exp(3j * muxi)
+                h10110 += K2Li * ncp.sqrt(bxi) * byi * ncp.exp(1j * muxi)
+                h10020 += K2Li * ncp.sqrt(bxi) * byi * ncp.exp(1j * (muxi - 2 * muyi))
+                h10200 += K2Li * ncp.sqrt(bxi) * byi * ncp.exp(1j * (muxi + 2 * muyi))
 
             if ei[0] == 1:
                 Li, bni, bxi, byi, dxi, muxi, muyi = (
@@ -3931,9 +3960,9 @@ class cell(beamline):
                 K1Li = Li * bni
                 h11001 += K1Li * bxi
                 h00111 -= K1Li * byi
-                h20001 += K1Li * bxi * np.exp(2j * muxi)
-                h00201 -= K1Li * byi * np.exp(2j * muyi)
-                h10002 += K1Li * dxi * np.sqrt(bxi) * np.exp(1j * muxi)
+                h20001 += K1Li * bxi * ncp.exp(2j * muxi)
+                h00201 -= K1Li * byi * ncp.exp(2j * muyi)
+                h10002 += K1Li * dxi * ncp.sqrt(bxi) * ncp.exp(1j * muxi)
 
             # --- dipole fringe field was ignored
 
@@ -4060,8 +4089,8 @@ class cell(beamline):
                                     * bxi ** (3.0 / 2)
                                     * bxj ** (3.0 / 2)
                                     * (
-                                        np.exp(3j * (muxi - muxj))
-                                        + 3 * np.exp(1j * (muxi - muxj))
+                                        ncp.exp(3j * (muxi - muxj))
+                                        + 3 * ncp.exp(1j * (muxi - muxj))
                                     )
                                 )
                             if "h31000" in locals():
@@ -4070,26 +4099,26 @@ class cell(beamline):
                                     * K2Lj
                                     * bxi ** (3.0 / 2)
                                     * bxj ** (3.0 / 2)
-                                    * np.exp(1j * (3 * muxi - muxj))
+                                    * ncp.exp(1j * (3 * muxi - muxj))
                                 )
                             if "h11110" in locals():
                                 d11110 = (
                                     K2Li
                                     * K2Lj
-                                    * np.sqrt(bxi * bxj)
+                                    * ncp.sqrt(bxi * bxj)
                                     * byi
                                     * (
                                         bxj
                                         * (
-                                            np.exp(-1j * (muxi - muxj))
-                                            - np.exp(1j * (muxi - muxj))
+                                            ncp.exp(-1j * (muxi - muxj))
+                                            - ncp.exp(1j * (muxi - muxj))
                                         )
                                         + byj
                                         * (
-                                            np.exp(
+                                            ncp.exp(
                                                 1j * (muxi - muxj + 2 * muyi - 2 * muyj)
                                             )
-                                            + np.exp(
+                                            + ncp.exp(
                                                 -1j
                                                 * (muxi - muxj - 2 * muyi + 2 * muyj)
                                             )
@@ -4100,19 +4129,19 @@ class cell(beamline):
                                 d11200 = (
                                     K2Li
                                     * K2Lj
-                                    * np.sqrt(bxi * bxj)
+                                    * ncp.sqrt(bxi * bxj)
                                     * byi
                                     * (
                                         bxj
                                         * (
-                                            np.exp(-1j * (muxi - muxj - 2 * muyi))
-                                            - np.exp(1j * (muxi - muxj + 2 * muyi))
+                                            ncp.exp(-1j * (muxi - muxj - 2 * muyi))
+                                            - ncp.exp(1j * (muxi - muxj + 2 * muyi))
                                         )
                                         + 2
                                         * byj
                                         * (
-                                            np.exp(1j * (muxi - muxj + 2 * muyi))
-                                            + np.exp(-1j * (muxi - muxj - 2 * muyj))
+                                            ncp.exp(1j * (muxi - muxj + 2 * muyi))
+                                            + ncp.exp(-1j * (muxi - muxj - 2 * muyj))
                                         )
                                     )
                                 )
@@ -4122,35 +4151,36 @@ class cell(beamline):
                                     * K2Lj
                                     * bxi ** (3.0 / 2)
                                     * bxj ** (3.0 / 2)
-                                    * np.exp(1j * (3 * muxi + muxj))
+                                    * ncp.exp(1j * (3 * muxi + muxj))
                                 )
                             if "h20020" in locals():
                                 d20020 = (
                                     K2Li
                                     * K2Lj
-                                    * np.sqrt(bxi * bxj)
+                                    * ncp.sqrt(bxi * bxj)
                                     * byi
                                     * (
-                                        bxj * np.exp(-1j * (muxi - 3 * muxj + 2 * muyi))
+                                        bxj
+                                        * ncp.exp(-1j * (muxi - 3 * muxj + 2 * muyi))
                                         - (bxj + 4 * byj)
-                                        * np.exp(1j * (muxi + muxj - 2 * muyi))
+                                        * ncp.exp(1j * (muxi + muxj - 2 * muyi))
                                     )
                                 )
                             if "h20110" in locals():
                                 d20110 = (
                                     K2Li
                                     * K2Lj
-                                    * np.sqrt(bxi * bxj)
+                                    * ncp.sqrt(bxi * bxj)
                                     * byi
                                     * (
                                         bxj
                                         * (
-                                            np.exp(-1j * (muxi - 3 * muxj))
-                                            - np.exp(1j * (muxi + muxj))
+                                            ncp.exp(-1j * (muxi - 3 * muxj))
+                                            - ncp.exp(1j * (muxi + muxj))
                                         )
                                         + 2
                                         * byj
-                                        * np.exp(
+                                        * ncp.exp(
                                             1j * (muxi + muxj + 2 * muyi - 2 * muyj)
                                         )
                                     )
@@ -4159,25 +4189,28 @@ class cell(beamline):
                                 d20200 = (
                                     K2Li
                                     * K2Lj
-                                    * np.sqrt(bxi * bxj)
+                                    * ncp.sqrt(bxi * bxj)
                                     * byi
                                     * (
-                                        bxj * np.exp(-1j * (muxi - 3 * muxj - 2 * muyi))
+                                        bxj
+                                        * ncp.exp(-1j * (muxi - 3 * muxj - 2 * muyi))
                                         - (bxj - 4 * byj)
-                                        * np.exp(1j * (muxi + muxj + 2 * muyi))
+                                        * ncp.exp(1j * (muxi + muxj + 2 * muyi))
                                     )
                                 )
                             if "h00220" in locals():
                                 d00220 = (
                                     K2Li
                                     * K2Lj
-                                    * np.sqrt(bxi * bxj)
+                                    * ncp.sqrt(bxi * bxj)
                                     * byi
                                     * byj
                                     * (
-                                        np.exp(1j * (muxi - muxj + 2 * muyi - 2 * muyj))
-                                        + 4 * np.exp(1j * (muxi - muxj))
-                                        - np.exp(
+                                        ncp.exp(
+                                            1j * (muxi - muxj + 2 * muyi - 2 * muyj)
+                                        )
+                                        + 4 * ncp.exp(1j * (muxi - muxj))
+                                        - ncp.exp(
                                             -1j * (muxi - muxj - 2 * muyi + 2 * muyj)
                                         )
                                     )
@@ -4186,22 +4219,22 @@ class cell(beamline):
                                 d00310 = (
                                     K2Li
                                     * K2Lj
-                                    * np.sqrt(bxi * bxj)
+                                    * ncp.sqrt(bxi * bxj)
                                     * byi
                                     * byj
                                     * (
-                                        np.exp(1j * (muxi - muxj + 2 * muyi))
-                                        - np.exp(-1j * (muxi - muxj - 2 * muyi))
+                                        ncp.exp(1j * (muxi - muxj + 2 * muyi))
+                                        - ncp.exp(-1j * (muxi - muxj - 2 * muyi))
                                     )
                                 )
                             if "h00400" in locals():
                                 d00400 = (
                                     K2Li
                                     * K2Lj
-                                    * np.sqrt(bxi * bxj)
+                                    * ncp.sqrt(bxi * bxj)
                                     * byi
                                     * byj
-                                    * np.exp(1j * (muxi - muxj + 2 * muyi + 2 * muyj))
+                                    * ncp.exp(1j * (muxi - muxj + 2 * muyi + 2 * muyj))
                                 )
                             # --- geometric/chromatic
                             if "h21001" in locals():
@@ -4214,9 +4247,9 @@ class cell(beamline):
                                     * bxj ** (3.0 / 2)
                                     * dxi
                                     * (
-                                        np.exp(1j * muxj)
-                                        - 2 * np.exp(1j * (2 * muxi - muxj))
-                                        + np.exp(-1j * (2 * muxi - 3 * muxj))
+                                        ncp.exp(1j * muxj)
+                                        - 2 * ncp.exp(1j * (2 * muxi - muxj))
+                                        + ncp.exp(-1j * (2 * muxi - 3 * muxj))
                                     )
                                 )
                             if "h30001" in locals():
@@ -4229,44 +4262,44 @@ class cell(beamline):
                                     * bxj ** (3.0 / 2)
                                     * dxi
                                     * (
-                                        np.exp(3j * muxj)
-                                        - np.exp(1j * (2 * muxi + muxj))
+                                        ncp.exp(3j * muxj)
+                                        - ncp.exp(1j * (2 * muxi + muxj))
                                     )
                                 )
                             if "h10021" in locals():
-                                d10021 = 1j / 16 * K2Li * K2Lj * bxi * np.sqrt(
+                                d10021 = 1j / 16 * K2Li * K2Lj * bxi * ncp.sqrt(
                                     bxj
                                 ) * byj * dxi * (
-                                    np.exp(1j * (muxj - 2 * muyj))
-                                    - np.exp(1j * (2 * muxi - muxj - 2 * muyj))
-                                ) - 1j / 8 * K2Li * K2Lj * np.sqrt(
+                                    ncp.exp(1j * (muxj - 2 * muyj))
+                                    - ncp.exp(1j * (2 * muxi - muxj - 2 * muyj))
+                                ) - 1j / 8 * K2Li * K2Lj * ncp.sqrt(
                                     bxj
                                 ) * byi * byj * dxi * (
-                                    np.exp(1j * (muxj - 2 * muyi))
-                                    - np.exp(1j * (muxj - 2 * muyj))
+                                    ncp.exp(1j * (muxj - 2 * muyi))
+                                    - ncp.exp(1j * (muxj - 2 * muyj))
                                 )
                             if "h10111" in locals():
-                                d10111 = 1j / 8 * K2Li * K2Lj * bxi * np.sqrt(
+                                d10111 = 1j / 8 * K2Li * K2Lj * bxi * ncp.sqrt(
                                     bxj
                                 ) * byj * dxi * (
-                                    np.exp(1j * muxj) - np.exp(1j * (2 * muxi - muxj))
-                                ) - 1j / 8 * K2Li * K2Lj * np.sqrt(
+                                    ncp.exp(1j * muxj) - ncp.exp(1j * (2 * muxi - muxj))
+                                ) - 1j / 8 * K2Li * K2Lj * ncp.sqrt(
                                     bxj
                                 ) * byi * byj * dxi * (
-                                    np.exp(1j * (muxj - 2 * muyi + 2 * muyj))
-                                    - np.exp(1j * (muxj + 2 * muyi - 2 * muyj))
+                                    ncp.exp(1j * (muxj - 2 * muyi + 2 * muyj))
+                                    - ncp.exp(1j * (muxj + 2 * muyi - 2 * muyj))
                                 )
                             if "h10201" in locals():
-                                d10201 = 1j / 16 * K2Li * K2Lj * bxi * np.sqrt(
+                                d10201 = 1j / 16 * K2Li * K2Lj * bxi * ncp.sqrt(
                                     bxj
                                 ) * byj * dxi * (
-                                    np.exp(1j * (muxj + 2 * muyj))
-                                    - np.exp(1j * (2 * muxi - muxj + 2 * muyj))
-                                ) + 1j / 8 * K2Li * K2Lj * np.sqrt(
+                                    ncp.exp(1j * (muxj + 2 * muyj))
+                                    - ncp.exp(1j * (2 * muxi - muxj + 2 * muyj))
+                                ) + 1j / 8 * K2Li * K2Lj * ncp.sqrt(
                                     bxj
                                 ) * byi * byj * dxi * (
-                                    np.exp(1j * (muxj + 2 * muyi))
-                                    - np.exp(1j * (muxj + 2 * muyj))
+                                    ncp.exp(1j * (muxj + 2 * muyi))
+                                    - ncp.exp(1j * (muxj + 2 * muyj))
                                 )
                             if "h11002" in locals():
                                 d11002 = (
@@ -4278,17 +4311,17 @@ class cell(beamline):
                                     * bxj
                                     * dxi
                                     * dxj
-                                    * np.exp(2j * (muxi - muxj))
+                                    * ncp.exp(2j * (muxi - muxj))
                                     + 1j
                                     / 8
                                     * K2Li
                                     * K2Lj
-                                    * np.sqrt(bxi)
+                                    * ncp.sqrt(bxi)
                                     * bxj ** (3.0 / 2)
                                     * dxi**2
                                     * (
-                                        np.exp(1j * (muxi - muxj))
-                                        - np.exp(-1j * (muxi - muxj))
+                                        ncp.exp(1j * (muxi - muxj))
+                                        - ncp.exp(-1j * (muxi - muxj))
                                     )
                                 )
                             if "h20002" in locals():
@@ -4301,17 +4334,17 @@ class cell(beamline):
                                     * bxj
                                     * dxi
                                     * dxj
-                                    * np.exp(2j * muxi)
+                                    * ncp.exp(2j * muxi)
                                     + 1j
                                     / 16
                                     * K2Li
                                     * K2Lj
-                                    * np.sqrt(bxi)
+                                    * ncp.sqrt(bxi)
                                     * bxj ** (3.0 / 2)
                                     * dxi**2
                                     * (
-                                        np.exp(1j * (muxi + muxj))
-                                        - np.exp(-1j * (muxi - 3 * muxj))
+                                        ncp.exp(1j * (muxi + muxj))
+                                        - ncp.exp(-1j * (muxi - 3 * muxj))
                                     )
                                 )
                             if "h00112" in locals():
@@ -4324,17 +4357,17 @@ class cell(beamline):
                                     * byj
                                     * dxi
                                     * dxj
-                                    * np.exp(2j * (muyi - muyj))
+                                    * ncp.exp(2j * (muyi - muyj))
                                     - 1j
                                     / 8
                                     * K2Li
                                     * K2Lj
-                                    * np.sqrt(bxi * bxj)
+                                    * ncp.sqrt(bxi * bxj)
                                     * byj
                                     * dxi**2
                                     * (
-                                        np.exp(1j * (muxi - muxj))
-                                        - np.exp(-1j * (muxi - muxj))
+                                        ncp.exp(1j * (muxi - muxj))
+                                        - ncp.exp(-1j * (muxi - muxj))
                                     )
                                 )
                             if "h00202" in locals():
@@ -4347,17 +4380,17 @@ class cell(beamline):
                                     * byj
                                     * dxi
                                     * dxj
-                                    * np.exp(2j * muyi)
+                                    * ncp.exp(2j * muyi)
                                     - 1j
                                     / 16
                                     * K2Li
                                     * K2Lj
-                                    * np.sqrt(bxi * bxj)
+                                    * ncp.sqrt(bxi * bxj)
                                     * byj
                                     * dxi**2
                                     * (
-                                        np.exp(1j * (muxi - muxj + 2 * muyj))
-                                        - np.exp(-1j * (muxi - muxj - 2 * muyj))
+                                        ncp.exp(1j * (muxi - muxj + 2 * muyj))
+                                        - ncp.exp(-1j * (muxi - muxj - 2 * muyj))
                                     )
                                 )
                             if "h10003" in locals():
@@ -4366,13 +4399,13 @@ class cell(beamline):
                                     / 4
                                     * K2Li
                                     * K2Lj
-                                    * np.sqrt(bxi)
+                                    * ncp.sqrt(bxi)
                                     * bxj
                                     * dxi**2
                                     * dxj
                                     * (
-                                        np.exp(1j * muxi)
-                                        - np.exp(-1j * (muxi - 2 * muxj))
+                                        ncp.exp(1j * muxi)
+                                        - ncp.exp(-1j * (muxi - 2 * muxj))
                                     )
                                 )
                             if "h00004" in locals():
@@ -4381,10 +4414,10 @@ class cell(beamline):
                                     / 4
                                     * K2Li
                                     * K2Lj
-                                    * np.sqrt(bxi * bxj)
+                                    * ncp.sqrt(bxi * bxj)
                                     * dxi**2
                                     * dxj**2
-                                    * np.exp(1j * (muxi - muxj))
+                                    * ncp.exp(1j * (muxi - muxj))
                                 )
 
                             if j > i:
@@ -4499,9 +4532,9 @@ class cell(beamline):
                                 * bxi ** (3.0 / 2)
                                 * bxj
                                 * (
-                                    np.exp(1j * muxi)
-                                    + np.exp(1j * (3 * muxi - 2 * muxj))
-                                    - 2 * np.exp(-1j * (muxi - 2 * muxj))
+                                    ncp.exp(1j * muxi)
+                                    + ncp.exp(1j * (3 * muxi - 2 * muxj))
+                                    - 2 * ncp.exp(-1j * (muxi - 2 * muxj))
                                 )
                             )
                         if "h30001" in locals():
@@ -4512,85 +4545,85 @@ class cell(beamline):
                                 * K1Lj
                                 * bxi ** (3.0 / 2)
                                 * bxj
-                                * (np.exp(3j * muxi) - np.exp(1j * (muxi + 2 * muxj)))
+                                * (ncp.exp(3j * muxi) - ncp.exp(1j * (muxi + 2 * muxj)))
                             )
                         if "h10021" in locals():
-                            d10021 = 1j / 32 * K2Li * K1Lj * np.sqrt(
+                            d10021 = 1j / 32 * K2Li * K1Lj * ncp.sqrt(
                                 bxi
                             ) * bxj * byi * (
-                                np.exp(1j * (muxi - 2 * muyi))
-                                - np.exp(-1j * (muxi - 2 * muxj + 2 * muyi))
-                            ) + 1j / 16 * K2Li * K1Lj * np.sqrt(
+                                ncp.exp(1j * (muxi - 2 * muyi))
+                                - ncp.exp(-1j * (muxi - 2 * muxj + 2 * muyi))
+                            ) + 1j / 16 * K2Li * K1Lj * ncp.sqrt(
                                 bxi
                             ) * byi * byj * (
-                                np.exp(1j * (muxi - 2 * muyi))
-                                - np.exp(1j * (muxi - 2 * muyj))
+                                ncp.exp(1j * (muxi - 2 * muyi))
+                                - ncp.exp(1j * (muxi - 2 * muyj))
                             )
                         if "h10111" in locals():
-                            d10111 = 1j / 16 * K2Li * K1Lj * np.sqrt(
+                            d10111 = 1j / 16 * K2Li * K1Lj * ncp.sqrt(
                                 bxi
                             ) * bxj * byi * (
-                                np.exp(1j * muxi) - np.exp(-1j * (muxi - 2 * muxj))
-                            ) + 1j / 16 * K2Li * K1Lj * np.sqrt(
+                                ncp.exp(1j * muxi) - ncp.exp(-1j * (muxi - 2 * muxj))
+                            ) + 1j / 16 * K2Li * K1Lj * ncp.sqrt(
                                 bxi
                             ) * byi * byj * (
-                                np.exp(1j * (muxi - 2 * muyi + 2 * muyj))
-                                - np.exp(1j * (muxi + 2 * muyi - 2 * muyj))
+                                ncp.exp(1j * (muxi - 2 * muyi + 2 * muyj))
+                                - ncp.exp(1j * (muxi + 2 * muyi - 2 * muyj))
                             )
                         if "h10201" in locals():
-                            d10201 = 1j / 32 * K2Li * K1Lj * np.sqrt(
+                            d10201 = 1j / 32 * K2Li * K1Lj * ncp.sqrt(
                                 bxi
                             ) * bxj * byi * (
-                                np.exp(1j * (muxi + 2 * muyi))
-                                - np.exp(-1j * (muxi - 2 * muxj - 2 * muyi))
-                            ) - 1j / 16 * K2Li * K1Lj * np.sqrt(
+                                ncp.exp(1j * (muxi + 2 * muyi))
+                                - ncp.exp(-1j * (muxi - 2 * muxj - 2 * muyi))
+                            ) - 1j / 16 * K2Li * K1Lj * ncp.sqrt(
                                 bxi
                             ) * byi * byj * (
-                                np.exp(1j * (muxi + 2 * muyi))
-                                - np.exp(1j * (muxi + 2 * muyj))
+                                ncp.exp(1j * (muxi + 2 * muyi))
+                                - ncp.exp(1j * (muxi + 2 * muyj))
                             )
                         if "h11002" in locals():
-                            d11002 = -1j / 8 * K2Li * K1Lj * bxi * bxj * dxi * np.exp(
+                            d11002 = -1j / 8 * K2Li * K1Lj * bxi * bxj * dxi * ncp.exp(
                                 2j * (muxi - muxj)
-                            ) + 1j / 8 * K2Li * K1Lj * bxi * bxj * dxi * np.exp(
+                            ) + 1j / 8 * K2Li * K1Lj * bxi * bxj * dxi * ncp.exp(
                                 -2j * (muxi - muxj)
                             )
                         if "h20002" in locals():
-                            d20002 = -1j / 8 * K2Li * K1Lj * bxi * bxj * dxi * np.exp(
+                            d20002 = -1j / 8 * K2Li * K1Lj * bxi * bxj * dxi * ncp.exp(
                                 2j * muxi
-                            ) + 1j / 8 * K2Li * K1Lj * bxi * bxj * dxi * np.exp(
+                            ) + 1j / 8 * K2Li * K1Lj * bxi * bxj * dxi * ncp.exp(
                                 2j * muxj
                             )
                         if "h00112" in locals():
-                            d00112 = -1j / 8 * K2Li * K1Lj * byi * byj * dxi * np.exp(
+                            d00112 = -1j / 8 * K2Li * K1Lj * byi * byj * dxi * ncp.exp(
                                 2j * (muyi - muyj)
-                            ) + 1j / 8 * K2Li * K1Lj * byi * byj * dxi * np.exp(
+                            ) + 1j / 8 * K2Li * K1Lj * byi * byj * dxi * ncp.exp(
                                 -2j * (muyi - muyj)
                             )
                         if "h00202" in locals():
-                            d00202 = -1j / 8 * K2Li * K1Lj * byi * byj * dxi * np.exp(
+                            d00202 = -1j / 8 * K2Li * K1Lj * byi * byj * dxi * ncp.exp(
                                 2j * muyi
-                            ) + 1j / 8 * K2Li * K1Lj * byi * byj * dxi * np.exp(
+                            ) + 1j / 8 * K2Li * K1Lj * byi * byj * dxi * ncp.exp(
                                 2j * muyj
                             )
                         if "h10003" in locals():
-                            d10003 = 1j / 4 * K2Li * K1Lj * bxi * np.sqrt(
+                            d10003 = 1j / 4 * K2Li * K1Lj * bxi * ncp.sqrt(
                                 bxj
                             ) * dxi * dxj * (
-                                np.exp(1j * muxj) - np.exp(1j * (2 * muxi - muxj))
-                            ) - 1j / 8 * K2Li * K1Lj * np.sqrt(
+                                ncp.exp(1j * muxj) - ncp.exp(1j * (2 * muxi - muxj))
+                            ) - 1j / 8 * K2Li * K1Lj * ncp.sqrt(
                                 bxi
                             ) * bxj * dxi**2 * (
-                                np.exp(1j * muxi) - np.exp(-1j * (muxi - 2 * muxj))
+                                ncp.exp(1j * muxi) - ncp.exp(-1j * (muxi - 2 * muxj))
                             )
                         if "h00004" in locals():
-                            d00004 = -1j / 4 * K2Li * K1Lj * np.sqrt(
+                            d00004 = -1j / 4 * K2Li * K1Lj * ncp.sqrt(
                                 bxi * bxj
-                            ) * dxi**2 * dxj * np.exp(
+                            ) * dxi**2 * dxj * ncp.exp(
                                 1j * (muxi - muxj)
-                            ) + 1j / 4 * K2Li * K1Lj * np.sqrt(
+                            ) + 1j / 4 * K2Li * K1Lj * ncp.sqrt(
                                 bxi * bxj
-                            ) * dxi**2 * dxj * np.exp(
+                            ) * dxi**2 * dxj * ncp.exp(
                                 -1j * (muxi - muxj)
                             )
 
@@ -4671,12 +4704,12 @@ class cell(beamline):
                                 / 8
                                 * K1Li
                                 * K2Lj
-                                * np.sqrt(bxi)
+                                * ncp.sqrt(bxi)
                                 * bxj ** (3.0 / 2)
                                 * dxi
                                 * (
-                                    np.exp(1j * (muxi - muxj))
-                                    - np.exp(-1j * (muxi - muxj))
+                                    ncp.exp(1j * (muxi - muxj))
+                                    - ncp.exp(-1j * (muxi - muxj))
                                 )
                             )
                         if "h20002" in locals():
@@ -4685,12 +4718,12 @@ class cell(beamline):
                                 / 16
                                 * K1Li
                                 * K2Lj
-                                * np.sqrt(bxi)
+                                * ncp.sqrt(bxi)
                                 * bxj ** (3.0 / 2)
                                 * dxi
                                 * (
-                                    np.exp(1j * (muxi + muxj))
-                                    - np.exp(-1j * (muxi - 3 * muxj))
+                                    ncp.exp(1j * (muxi + muxj))
+                                    - ncp.exp(-1j * (muxi - 3 * muxj))
                                 )
                             )
                         if "h00112" in locals():
@@ -4699,12 +4732,12 @@ class cell(beamline):
                                 / 8
                                 * K1Li
                                 * K2Lj
-                                * np.sqrt(bxi * bxj)
+                                * ncp.sqrt(bxi * bxj)
                                 * byj
                                 * dxi
                                 * (
-                                    np.exp(1j * (muxi - muxj))
-                                    - np.exp(-1j * (muxi - muxj))
+                                    ncp.exp(1j * (muxi - muxj))
+                                    - ncp.exp(-1j * (muxi - muxj))
                                 )
                             )
                         if "h00202" in locals():
@@ -4713,12 +4746,12 @@ class cell(beamline):
                                 / 16
                                 * K1Li
                                 * K2Lj
-                                * np.sqrt(bxi * bxj)
+                                * ncp.sqrt(bxi * bxj)
                                 * byj
                                 * dxi
                                 * (
-                                    np.exp(1j * (muxi - muxj + 2 * muyj))
-                                    - np.exp(-1j * (muxi - muxj - 2 * muyj))
+                                    ncp.exp(1j * (muxi - muxj + 2 * muyj))
+                                    - ncp.exp(-1j * (muxi - muxj - 2 * muyj))
                                 )
                             )
 
@@ -4762,7 +4795,7 @@ class cell(beamline):
                                     * K1Lj
                                     * bxi
                                     * bxj
-                                    * np.exp(2j * (muxi - muxj))
+                                    * ncp.exp(2j * (muxi - muxj))
                                 )
                             if "h20002" in locals():
                                 d20002 = (
@@ -4772,7 +4805,7 @@ class cell(beamline):
                                     * K1Lj
                                     * bxi
                                     * bxj
-                                    * np.exp(2j * muxi)
+                                    * ncp.exp(2j * muxi)
                                 )
                             if "h00112" in locals():
                                 d00112 = (
@@ -4782,7 +4815,7 @@ class cell(beamline):
                                     * K1Lj
                                     * byi
                                     * byj
-                                    * np.exp(2j * (muyi - muyj))
+                                    * ncp.exp(2j * (muyi - muyj))
                                 )
                             if "h00202" in locals():
                                 d00202 = (
@@ -4792,7 +4825,7 @@ class cell(beamline):
                                     * K1Lj
                                     * byi
                                     * byj
-                                    * np.exp(2j * muyi)
+                                    * ncp.exp(2j * muyi)
                                 )
                             if "h10003" in locals():
                                 d10003 = (
@@ -4800,12 +4833,12 @@ class cell(beamline):
                                     / 8
                                     * K1Li
                                     * K1Lj
-                                    * np.sqrt(bxi)
+                                    * ncp.sqrt(bxi)
                                     * bxj
                                     * dxi
                                     * (
-                                        np.exp(1j * muxi)
-                                        - np.exp(-1j * (muxi - 2 * muxj))
+                                        ncp.exp(1j * muxi)
+                                        - ncp.exp(-1j * (muxi - 2 * muxj))
                                     )
                                 )
                             if "h00004" in locals():
@@ -4814,10 +4847,10 @@ class cell(beamline):
                                     / 4
                                     * K1Li
                                     * K1Lj
-                                    * np.sqrt(bxi * bxj)
+                                    * ncp.sqrt(bxi * bxj)
                                     * dxi
                                     * dxj
-                                    * np.exp(1j * (muxi - muxj))
+                                    * ncp.exp(1j * (muxi - muxj))
                                 )
                         if j > i:
                             if "h11002" in locals():
@@ -4918,15 +4951,15 @@ class cell(beamline):
                 # print K2Li,bxi,byi,dxi,muxi,muyi
                 h11001 -= 2 * K2Li * dxi * bxi
                 h00111 += 2 * K2Li * dxi * byi
-                h20001 -= 2 * K2Li * dxi * bxi * np.exp(2j * muxi)
-                h00201 += 2 * K2Li * dxi * byi * np.exp(2j * muyi)
-                h10002 -= K2Li * dxi**2 * np.sqrt(bxi) * np.exp(1j * muxi)
+                h20001 -= 2 * K2Li * dxi * bxi * ncp.exp(2j * muxi)
+                h00201 += 2 * K2Li * dxi * byi * ncp.exp(2j * muyi)
+                h10002 -= K2Li * dxi**2 * ncp.sqrt(bxi) * ncp.exp(1j * muxi)
 
-                h21000 -= K2Li * bxi ** (3.0 / 2) * np.exp(1j * muxi)
-                h30000 -= K2Li * bxi ** (3.0 / 2) * np.exp(3j * muxi)
-                h10110 += K2Li * np.sqrt(bxi) * byi * np.exp(1j * muxi)
-                h10020 += K2Li * np.sqrt(bxi) * byi * np.exp(1j * (muxi - 2 * muyi))
-                h10200 += K2Li * np.sqrt(bxi) * byi * np.exp(1j * (muxi + 2 * muyi))
+                h21000 -= K2Li * bxi ** (3.0 / 2) * ncp.exp(1j * muxi)
+                h30000 -= K2Li * bxi ** (3.0 / 2) * ncp.exp(3j * muxi)
+                h10110 += K2Li * ncp.sqrt(bxi) * byi * ncp.exp(1j * muxi)
+                h10020 += K2Li * ncp.sqrt(bxi) * byi * ncp.exp(1j * (muxi - 2 * muyi))
+                h10200 += K2Li * ncp.sqrt(bxi) * byi * ncp.exp(1j * (muxi + 2 * muyi))
 
             if ei.__class__.__name__ == "quad":
                 bxi, byi, dxi, muxi, muyi = self.twmid(i)
@@ -4934,40 +4967,40 @@ class cell(beamline):
                 # print K1Li,bxi,byi,dxi,muxi,muyi
                 h11001 += K1Li * bxi
                 h00111 -= K1Li * byi
-                h20001 += K1Li * bxi * np.exp(2j * muxi)
-                h00201 -= K1Li * byi * np.exp(2j * muyi)
-                h10002 += K1Li * dxi * np.sqrt(bxi) * np.exp(1j * muxi)
+                h20001 += K1Li * bxi * ncp.exp(2j * muxi)
+                h00201 -= K1Li * byi * ncp.exp(2j * muyi)
+                h10002 += K1Li * dxi * ncp.sqrt(bxi) * ncp.exp(1j * muxi)
 
             """
 
             if ei.__class__.__name__ == 'bend':
                 #entrance fringe
-                K1Li = -np.tan(ei.e1)/ei.R
+                K1Li = -ncp.tan(ei.e1)/ei.R
                 bxi,byi,dxi,muxi,muyi = self.twx[0,i],self.twy[0,i],self.etax[i],self.mux[i],self.muy[i]
                 h11001 += K1Li*bxi
                 h00111 -= K1Li*byi
-                h20001 += K1Li*bxi*np.exp(2j*muxi)
-                h00201 -= K1Li*byi*np.exp(2j*muyi)
-                h10002 += K1Li*dxi*np.sqrt(bxi)*np.exp(1j*muxi)
+                h20001 += K1Li*bxi*ncp.exp(2j*muxi)
+                h00201 -= K1Li*byi*ncp.exp(2j*muyi)
+                h10002 += K1Li*dxi*ncp.sqrt(bxi)*ncp.exp(1j*muxi)
                 #body
                 bxi,byi,dxi,muxi,muyi = self.twmid(i)
                 #horizontal
                 K1Li = (ei.K1+1/ei.R**2)*ei.L
                 h11001 += K1Li*bxi
-                h20001 += K1Li*bxi*np.exp(2j*muxi)
-                h10002 += K1Li*dxi*np.sqrt(bxi)*np.exp(1j*muxi)
+                h20001 += K1Li*bxi*ncp.exp(2j*muxi)
+                h10002 += K1Li*dxi*ncp.sqrt(bxi)*ncp.exp(1j*muxi)
                 #vertical
                 K1Li = ei.K1*ei.L
                 h00111 -= K1Li*byi
-                h00201 -= K1Li*byi*np.exp(2j*muyi)
+                h00201 -= K1Li*byi*ncp.exp(2j*muyi)
                 #exit fringe
-                K1Li = -np.tan(ei.e2)/ei.R
+                K1Li = -ncp.tan(ei.e2)/ei.R
                 bxi,byi,dxi,muxi,muyi = self.twx[0,i+1],self.twy[0,i+1],self.etax[i+1],self.mux[i+1],self.muy[i+1]
                 h11001 += K1Li*bxi
                 h00111 -= K1Li*byi
-                h20001 += K1Li*bxi*np.exp(2j*muxi)
-                h00201 -= K1Li*byi*np.exp(2j*muyi)
-                h10002 += K1Li*dxi*np.sqrt(bxi)*np.exp(1j*muxi)
+                h20001 += K1Li*bxi*ncp.exp(2j*muxi)
+                h00201 -= K1Li*byi*ncp.exp(2j*muyi)
+                h10002 += K1Li*dxi*ncp.sqrt(bxi)*ncp.exp(1j*muxi)
             """
 
         self.h1 = {
@@ -5030,8 +5063,8 @@ class cell(beamline):
                                 * bxi ** (3.0 / 2)
                                 * bxj ** (3.0 / 2)
                                 * (
-                                    np.exp(3j * (muxi - muxj))
-                                    + 3 * np.exp(1j * (muxi - muxj))
+                                    ncp.exp(3j * (muxi - muxj))
+                                    + 3 * ncp.exp(1j * (muxi - muxj))
                                 )
                             )
                             d31000 = (
@@ -5039,23 +5072,25 @@ class cell(beamline):
                                 * K2Lj
                                 * bxi ** (3.0 / 2)
                                 * bxj ** (3.0 / 2)
-                                * np.exp(1j * (3 * muxi - muxj))
+                                * ncp.exp(1j * (3 * muxi - muxj))
                             )
                             d11110 = (
                                 K2Li
                                 * K2Lj
-                                * np.sqrt(bxi * bxj)
+                                * ncp.sqrt(bxi * bxj)
                                 * byi
                                 * (
                                     bxj
                                     * (
-                                        np.exp(-1j * (muxi - muxj))
-                                        - np.exp(1j * (muxi - muxj))
+                                        ncp.exp(-1j * (muxi - muxj))
+                                        - ncp.exp(1j * (muxi - muxj))
                                     )
                                     + byj
                                     * (
-                                        np.exp(1j * (muxi - muxj + 2 * muyi - 2 * muyj))
-                                        + np.exp(
+                                        ncp.exp(
+                                            1j * (muxi - muxj + 2 * muyi - 2 * muyj)
+                                        )
+                                        + ncp.exp(
                                             -1j * (muxi - muxj - 2 * muyi + 2 * muyj)
                                         )
                                     )
@@ -5064,19 +5099,19 @@ class cell(beamline):
                             d11200 = (
                                 K2Li
                                 * K2Lj
-                                * np.sqrt(bxi * bxj)
+                                * ncp.sqrt(bxi * bxj)
                                 * byi
                                 * (
                                     bxj
                                     * (
-                                        np.exp(-1j * (muxi - muxj - 2 * muyi))
-                                        - np.exp(1j * (muxi - muxj + 2 * muyi))
+                                        ncp.exp(-1j * (muxi - muxj - 2 * muyi))
+                                        - ncp.exp(1j * (muxi - muxj + 2 * muyi))
                                     )
                                     + 2
                                     * byj
                                     * (
-                                        np.exp(1j * (muxi - muxj + 2 * muyi))
-                                        + np.exp(-1j * (muxi - muxj - 2 * muyj))
+                                        ncp.exp(1j * (muxi - muxj + 2 * muyi))
+                                        + ncp.exp(-1j * (muxi - muxj - 2 * muyj))
                                     )
                                 )
                             )
@@ -5085,76 +5120,76 @@ class cell(beamline):
                                 * K2Lj
                                 * bxi ** (3.0 / 2)
                                 * bxj ** (3.0 / 2)
-                                * np.exp(1j * (3 * muxi + muxj))
+                                * ncp.exp(1j * (3 * muxi + muxj))
                             )
                             d20020 = (
                                 K2Li
                                 * K2Lj
-                                * np.sqrt(bxi * bxj)
+                                * ncp.sqrt(bxi * bxj)
                                 * byi
                                 * (
-                                    bxj * np.exp(-1j * (muxi - 3 * muxj + 2 * muyi))
+                                    bxj * ncp.exp(-1j * (muxi - 3 * muxj + 2 * muyi))
                                     - (bxj + 4 * byj)
-                                    * np.exp(1j * (muxi + muxj - 2 * muyi))
+                                    * ncp.exp(1j * (muxi + muxj - 2 * muyi))
                                 )
                             )
                             d20110 = (
                                 K2Li
                                 * K2Lj
-                                * np.sqrt(bxi * bxj)
+                                * ncp.sqrt(bxi * bxj)
                                 * byi
                                 * (
                                     bxj
                                     * (
-                                        np.exp(-1j * (muxi - 3 * muxj))
-                                        - np.exp(1j * (muxi + muxj))
+                                        ncp.exp(-1j * (muxi - 3 * muxj))
+                                        - ncp.exp(1j * (muxi + muxj))
                                     )
                                     + 2
                                     * byj
-                                    * np.exp(1j * (muxi + muxj + 2 * muyi - 2 * muyj))
+                                    * ncp.exp(1j * (muxi + muxj + 2 * muyi - 2 * muyj))
                                 )
                             )
                             d20200 = (
                                 K2Li
                                 * K2Lj
-                                * np.sqrt(bxi * bxj)
+                                * ncp.sqrt(bxi * bxj)
                                 * byi
                                 * (
-                                    bxj * np.exp(-1j * (muxi - 3 * muxj - 2 * muyi))
+                                    bxj * ncp.exp(-1j * (muxi - 3 * muxj - 2 * muyi))
                                     - (bxj - 4 * byj)
-                                    * np.exp(1j * (muxi + muxj + 2 * muyi))
+                                    * ncp.exp(1j * (muxi + muxj + 2 * muyi))
                                 )
                             )
                             d00220 = (
                                 K2Li
                                 * K2Lj
-                                * np.sqrt(bxi * bxj)
+                                * ncp.sqrt(bxi * bxj)
                                 * byi
                                 * byj
                                 * (
-                                    np.exp(1j * (muxi - muxj + 2 * muyi - 2 * muyj))
-                                    + 4 * np.exp(1j * (muxi - muxj))
-                                    - np.exp(-1j * (muxi - muxj - 2 * muyi + 2 * muyj))
+                                    ncp.exp(1j * (muxi - muxj + 2 * muyi - 2 * muyj))
+                                    + 4 * ncp.exp(1j * (muxi - muxj))
+                                    - ncp.exp(-1j * (muxi - muxj - 2 * muyi + 2 * muyj))
                                 )
                             )
                             d00310 = (
                                 K2Li
                                 * K2Lj
-                                * np.sqrt(bxi * bxj)
+                                * ncp.sqrt(bxi * bxj)
                                 * byi
                                 * byj
                                 * (
-                                    np.exp(1j * (muxi - muxj + 2 * muyi))
-                                    - np.exp(-1j * (muxi - muxj - 2 * muyi))
+                                    ncp.exp(1j * (muxi - muxj + 2 * muyi))
+                                    - ncp.exp(-1j * (muxi - muxj - 2 * muyi))
                                 )
                             )
                             d00400 = (
                                 K2Li
                                 * K2Lj
-                                * np.sqrt(bxi * bxj)
+                                * ncp.sqrt(bxi * bxj)
                                 * byi
                                 * byj
-                                * np.exp(1j * (muxi - muxj + 2 * muyi + 2 * muyj))
+                                * ncp.exp(1j * (muxi - muxj + 2 * muyi + 2 * muyj))
                             )
                             # --- geometric/chromatic
                             d21001 = (
@@ -5166,9 +5201,9 @@ class cell(beamline):
                                 * bxj ** (3.0 / 2)
                                 * dxi
                                 * (
-                                    np.exp(1j * muxj)
-                                    - 2 * np.exp(1j * (2 * muxi - muxj))
-                                    + np.exp(-1j * (2 * muxi - 3 * muxj))
+                                    ncp.exp(1j * muxj)
+                                    - 2 * ncp.exp(1j * (2 * muxi - muxj))
+                                    + ncp.exp(-1j * (2 * muxi - 3 * muxj))
                                 )
                             )
                             d30001 = (
@@ -5179,39 +5214,39 @@ class cell(beamline):
                                 * bxi
                                 * bxj ** (3.0 / 2)
                                 * dxi
-                                * (np.exp(3j * muxj) - np.exp(1j * (2 * muxi + muxj)))
+                                * (ncp.exp(3j * muxj) - ncp.exp(1j * (2 * muxi + muxj)))
                             )
-                            d10021 = 1j / 16 * K2Li * K2Lj * bxi * np.sqrt(
+                            d10021 = 1j / 16 * K2Li * K2Lj * bxi * ncp.sqrt(
                                 bxj
                             ) * byj * dxi * (
-                                np.exp(1j * (muxj - 2 * muyj))
-                                - np.exp(1j * (2 * muxi - muxj - 2 * muyj))
-                            ) - 1j / 8 * K2Li * K2Lj * np.sqrt(
+                                ncp.exp(1j * (muxj - 2 * muyj))
+                                - ncp.exp(1j * (2 * muxi - muxj - 2 * muyj))
+                            ) - 1j / 8 * K2Li * K2Lj * ncp.sqrt(
                                 bxj
                             ) * byi * byj * dxi * (
-                                np.exp(1j * (muxj - 2 * muyi))
-                                - np.exp(1j * (muxj - 2 * muyj))
+                                ncp.exp(1j * (muxj - 2 * muyi))
+                                - ncp.exp(1j * (muxj - 2 * muyj))
                             )
-                            d10111 = 1j / 8 * K2Li * K2Lj * bxi * np.sqrt(
+                            d10111 = 1j / 8 * K2Li * K2Lj * bxi * ncp.sqrt(
                                 bxj
                             ) * byj * dxi * (
-                                np.exp(1j * muxj) - np.exp(1j * (2 * muxi - muxj))
-                            ) - 1j / 8 * K2Li * K2Lj * np.sqrt(
+                                ncp.exp(1j * muxj) - ncp.exp(1j * (2 * muxi - muxj))
+                            ) - 1j / 8 * K2Li * K2Lj * ncp.sqrt(
                                 bxj
                             ) * byi * byj * dxi * (
-                                np.exp(1j * (muxj - 2 * muyi + 2 * muyj))
-                                - np.exp(1j * (muxj + 2 * muyi - 2 * muyj))
+                                ncp.exp(1j * (muxj - 2 * muyi + 2 * muyj))
+                                - ncp.exp(1j * (muxj + 2 * muyi - 2 * muyj))
                             )
-                            d10201 = 1j / 16 * K2Li * K2Lj * bxi * np.sqrt(
+                            d10201 = 1j / 16 * K2Li * K2Lj * bxi * ncp.sqrt(
                                 bxj
                             ) * byj * dxi * (
-                                np.exp(1j * (muxj + 2 * muyj))
-                                - np.exp(1j * (2 * muxi - muxj + 2 * muyj))
-                            ) + 1j / 8 * K2Li * K2Lj * np.sqrt(
+                                ncp.exp(1j * (muxj + 2 * muyj))
+                                - ncp.exp(1j * (2 * muxi - muxj + 2 * muyj))
+                            ) + 1j / 8 * K2Li * K2Lj * ncp.sqrt(
                                 bxj
                             ) * byi * byj * dxi * (
-                                np.exp(1j * (muxj + 2 * muyi))
-                                - np.exp(1j * (muxj + 2 * muyj))
+                                ncp.exp(1j * (muxj + 2 * muyi))
+                                - ncp.exp(1j * (muxj + 2 * muyj))
                             )
                             d11002 = (
                                 1j
@@ -5222,17 +5257,17 @@ class cell(beamline):
                                 * bxj
                                 * dxi
                                 * dxj
-                                * np.exp(2j * (muxi - muxj))
+                                * ncp.exp(2j * (muxi - muxj))
                                 + 1j
                                 / 8
                                 * K2Li
                                 * K2Lj
-                                * np.sqrt(bxi)
+                                * ncp.sqrt(bxi)
                                 * bxj ** (3.0 / 2)
                                 * dxi**2
                                 * (
-                                    np.exp(1j * (muxi - muxj))
-                                    - np.exp(-1j * (muxi - muxj))
+                                    ncp.exp(1j * (muxi - muxj))
+                                    - ncp.exp(-1j * (muxi - muxj))
                                 )
                             )
                             d20002 = (
@@ -5244,17 +5279,17 @@ class cell(beamline):
                                 * bxj
                                 * dxi
                                 * dxj
-                                * np.exp(2j * muxi)
+                                * ncp.exp(2j * muxi)
                                 + 1j
                                 / 16
                                 * K2Li
                                 * K2Lj
-                                * np.sqrt(bxi)
+                                * ncp.sqrt(bxi)
                                 * bxj ** (3.0 / 2)
                                 * dxi**2
                                 * (
-                                    np.exp(1j * (muxi + muxj))
-                                    - np.exp(-1j * (muxi - 3 * muxj))
+                                    ncp.exp(1j * (muxi + muxj))
+                                    - ncp.exp(-1j * (muxi - 3 * muxj))
                                 )
                             )
                             d00112 = (
@@ -5266,17 +5301,17 @@ class cell(beamline):
                                 * byj
                                 * dxi
                                 * dxj
-                                * np.exp(2j * (muyi - muyj))
+                                * ncp.exp(2j * (muyi - muyj))
                                 - 1j
                                 / 8
                                 * K2Li
                                 * K2Lj
-                                * np.sqrt(bxi * bxj)
+                                * ncp.sqrt(bxi * bxj)
                                 * byj
                                 * dxi**2
                                 * (
-                                    np.exp(1j * (muxi - muxj))
-                                    - np.exp(-1j * (muxi - muxj))
+                                    ncp.exp(1j * (muxi - muxj))
+                                    - ncp.exp(-1j * (muxi - muxj))
                                 )
                             )
                             d00202 = (
@@ -5288,17 +5323,17 @@ class cell(beamline):
                                 * byj
                                 * dxi
                                 * dxj
-                                * np.exp(2j * muyi)
+                                * ncp.exp(2j * muyi)
                                 - 1j
                                 / 16
                                 * K2Li
                                 * K2Lj
-                                * np.sqrt(bxi * bxj)
+                                * ncp.sqrt(bxi * bxj)
                                 * byj
                                 * dxi**2
                                 * (
-                                    np.exp(1j * (muxi - muxj + 2 * muyj))
-                                    - np.exp(-1j * (muxi - muxj - 2 * muyj))
+                                    ncp.exp(1j * (muxi - muxj + 2 * muyj))
+                                    - ncp.exp(-1j * (muxi - muxj - 2 * muyj))
                                 )
                             )
                             d10003 = (
@@ -5306,21 +5341,24 @@ class cell(beamline):
                                 / 4
                                 * K2Li
                                 * K2Lj
-                                * np.sqrt(bxi)
+                                * ncp.sqrt(bxi)
                                 * bxj
                                 * dxi**2
                                 * dxj
-                                * (np.exp(1j * muxi) - np.exp(-1j * (muxi - 2 * muxj)))
+                                * (
+                                    ncp.exp(1j * muxi)
+                                    - ncp.exp(-1j * (muxi - 2 * muxj))
+                                )
                             )
                             d00004 = (
                                 1j
                                 / 4
                                 * K2Li
                                 * K2Lj
-                                * np.sqrt(bxi * bxj)
+                                * ncp.sqrt(bxi * bxj)
                                 * dxi**2
                                 * dxj**2
-                                * np.exp(1j * (muxi - muxj))
+                                * ncp.exp(1j * (muxi - muxj))
                             )
 
                             if j > i:
@@ -5382,9 +5420,9 @@ class cell(beamline):
                             * bxi ** (3.0 / 2)
                             * bxj
                             * (
-                                np.exp(1j * muxi)
-                                + np.exp(1j * (3 * muxi - 2 * muxj))
-                                - 2 * np.exp(-1j * (muxi - 2 * muxj))
+                                ncp.exp(1j * muxi)
+                                + ncp.exp(1j * (3 * muxi - 2 * muxj))
+                                - 2 * ncp.exp(-1j * (muxi - 2 * muxj))
                             )
                         )
                         d30001 = (
@@ -5394,60 +5432,60 @@ class cell(beamline):
                             * K1Lj
                             * bxi ** (3.0 / 2)
                             * bxj
-                            * (np.exp(3j * muxi) - np.exp(1j * (muxi + 2 * muxj)))
+                            * (ncp.exp(3j * muxi) - ncp.exp(1j * (muxi + 2 * muxj)))
                         )
-                        d10021 = 1j / 32 * K2Li * K1Lj * np.sqrt(bxi) * bxj * byi * (
-                            np.exp(1j * (muxi - 2 * muyi))
-                            - np.exp(-1j * (muxi - 2 * muxj + 2 * muyi))
-                        ) + 1j / 16 * K2Li * K1Lj * np.sqrt(bxi) * byi * byj * (
-                            np.exp(1j * (muxi - 2 * muyi))
-                            - np.exp(1j * (muxi - 2 * muyj))
+                        d10021 = 1j / 32 * K2Li * K1Lj * ncp.sqrt(bxi) * bxj * byi * (
+                            ncp.exp(1j * (muxi - 2 * muyi))
+                            - ncp.exp(-1j * (muxi - 2 * muxj + 2 * muyi))
+                        ) + 1j / 16 * K2Li * K1Lj * ncp.sqrt(bxi) * byi * byj * (
+                            ncp.exp(1j * (muxi - 2 * muyi))
+                            - ncp.exp(1j * (muxi - 2 * muyj))
                         )
-                        d10111 = 1j / 16 * K2Li * K1Lj * np.sqrt(bxi) * bxj * byi * (
-                            np.exp(1j * muxi) - np.exp(-1j * (muxi - 2 * muxj))
-                        ) + 1j / 16 * K2Li * K1Lj * np.sqrt(bxi) * byi * byj * (
-                            np.exp(1j * (muxi - 2 * muyi + 2 * muyj))
-                            - np.exp(1j * (muxi + 2 * muyi - 2 * muyj))
+                        d10111 = 1j / 16 * K2Li * K1Lj * ncp.sqrt(bxi) * bxj * byi * (
+                            ncp.exp(1j * muxi) - ncp.exp(-1j * (muxi - 2 * muxj))
+                        ) + 1j / 16 * K2Li * K1Lj * ncp.sqrt(bxi) * byi * byj * (
+                            ncp.exp(1j * (muxi - 2 * muyi + 2 * muyj))
+                            - ncp.exp(1j * (muxi + 2 * muyi - 2 * muyj))
                         )
-                        d10201 = 1j / 32 * K2Li * K1Lj * np.sqrt(bxi) * bxj * byi * (
-                            np.exp(1j * (muxi + 2 * muyi))
-                            - np.exp(-1j * (muxi - 2 * muxj - 2 * muyi))
-                        ) - 1j / 16 * K2Li * K1Lj * np.sqrt(bxi) * byi * byj * (
-                            np.exp(1j * (muxi + 2 * muyi))
-                            - np.exp(1j * (muxi + 2 * muyj))
+                        d10201 = 1j / 32 * K2Li * K1Lj * ncp.sqrt(bxi) * bxj * byi * (
+                            ncp.exp(1j * (muxi + 2 * muyi))
+                            - ncp.exp(-1j * (muxi - 2 * muxj - 2 * muyi))
+                        ) - 1j / 16 * K2Li * K1Lj * ncp.sqrt(bxi) * byi * byj * (
+                            ncp.exp(1j * (muxi + 2 * muyi))
+                            - ncp.exp(1j * (muxi + 2 * muyj))
                         )
-                        d11002 = -1j / 8 * K2Li * K1Lj * bxi * bxj * dxi * np.exp(
+                        d11002 = -1j / 8 * K2Li * K1Lj * bxi * bxj * dxi * ncp.exp(
                             2j * (muxi - muxj)
-                        ) + 1j / 8 * K2Li * K1Lj * bxi * bxj * dxi * np.exp(
+                        ) + 1j / 8 * K2Li * K1Lj * bxi * bxj * dxi * ncp.exp(
                             -2j * (muxi - muxj)
                         )
-                        d20002 = -1j / 8 * K2Li * K1Lj * bxi * bxj * dxi * np.exp(
+                        d20002 = -1j / 8 * K2Li * K1Lj * bxi * bxj * dxi * ncp.exp(
                             2j * muxi
-                        ) + 1j / 8 * K2Li * K1Lj * bxi * bxj * dxi * np.exp(2j * muxj)
-                        d00112 = -1j / 8 * K2Li * K1Lj * byi * byj * dxi * np.exp(
+                        ) + 1j / 8 * K2Li * K1Lj * bxi * bxj * dxi * ncp.exp(2j * muxj)
+                        d00112 = -1j / 8 * K2Li * K1Lj * byi * byj * dxi * ncp.exp(
                             2j * (muyi - muyj)
-                        ) + 1j / 8 * K2Li * K1Lj * byi * byj * dxi * np.exp(
+                        ) + 1j / 8 * K2Li * K1Lj * byi * byj * dxi * ncp.exp(
                             -2j * (muyi - muyj)
                         )
-                        d00202 = -1j / 8 * K2Li * K1Lj * byi * byj * dxi * np.exp(
+                        d00202 = -1j / 8 * K2Li * K1Lj * byi * byj * dxi * ncp.exp(
                             2j * muyi
-                        ) + 1j / 8 * K2Li * K1Lj * byi * byj * dxi * np.exp(2j * muyj)
-                        d10003 = 1j / 4 * K2Li * K1Lj * bxi * np.sqrt(
+                        ) + 1j / 8 * K2Li * K1Lj * byi * byj * dxi * ncp.exp(2j * muyj)
+                        d10003 = 1j / 4 * K2Li * K1Lj * bxi * ncp.sqrt(
                             bxj
                         ) * dxi * dxj * (
-                            np.exp(1j * muxj) - np.exp(1j * (2 * muxi - muxj))
-                        ) - 1j / 8 * K2Li * K1Lj * np.sqrt(
+                            ncp.exp(1j * muxj) - ncp.exp(1j * (2 * muxi - muxj))
+                        ) - 1j / 8 * K2Li * K1Lj * ncp.sqrt(
                             bxi
                         ) * bxj * dxi**2 * (
-                            np.exp(1j * muxi) - np.exp(-1j * (muxi - 2 * muxj))
+                            ncp.exp(1j * muxi) - ncp.exp(-1j * (muxi - 2 * muxj))
                         )
-                        d00004 = -1j / 4 * K2Li * K1Lj * np.sqrt(
+                        d00004 = -1j / 4 * K2Li * K1Lj * ncp.sqrt(
                             bxi * bxj
-                        ) * dxi**2 * dxj * np.exp(
+                        ) * dxi**2 * dxj * ncp.exp(
                             1j * (muxi - muxj)
-                        ) + 1j / 4 * K2Li * K1Lj * np.sqrt(
+                        ) + 1j / 4 * K2Li * K1Lj * ncp.sqrt(
                             bxi * bxj
-                        ) * dxi**2 * dxj * np.exp(
+                        ) * dxi**2 * dxj * ncp.exp(
                             -1j * (muxi - muxj)
                         )
 
@@ -5489,22 +5527,25 @@ class cell(beamline):
                             / 8
                             * K1Li
                             * K2Lj
-                            * np.sqrt(bxi)
+                            * ncp.sqrt(bxi)
                             * bxj ** (3.0 / 2)
                             * dxi
-                            * (np.exp(1j * (muxi - muxj)) - np.exp(-1j * (muxi - muxj)))
+                            * (
+                                ncp.exp(1j * (muxi - muxj))
+                                - ncp.exp(-1j * (muxi - muxj))
+                            )
                         )
                         d20002 = (
                             -1j
                             / 16
                             * K1Li
                             * K2Lj
-                            * np.sqrt(bxi)
+                            * ncp.sqrt(bxi)
                             * bxj ** (3.0 / 2)
                             * dxi
                             * (
-                                np.exp(1j * (muxi + muxj))
-                                - np.exp(-1j * (muxi - 3 * muxj))
+                                ncp.exp(1j * (muxi + muxj))
+                                - ncp.exp(-1j * (muxi - 3 * muxj))
                             )
                         )
                         d00112 = (
@@ -5512,22 +5553,25 @@ class cell(beamline):
                             / 8
                             * K1Li
                             * K2Lj
-                            * np.sqrt(bxi * bxj)
+                            * ncp.sqrt(bxi * bxj)
                             * byj
                             * dxi
-                            * (np.exp(1j * (muxi - muxj)) - np.exp(-1j * (muxi - muxj)))
+                            * (
+                                ncp.exp(1j * (muxi - muxj))
+                                - ncp.exp(-1j * (muxi - muxj))
+                            )
                         )
                         d00202 = (
                             1j
                             / 16
                             * K1Li
                             * K2Lj
-                            * np.sqrt(bxi * bxj)
+                            * ncp.sqrt(bxi * bxj)
                             * byj
                             * dxi
                             * (
-                                np.exp(1j * (muxi - muxj + 2 * muyj))
-                                - np.exp(-1j * (muxi - muxj - 2 * muyj))
+                                ncp.exp(1j * (muxi - muxj + 2 * muyj))
+                                - ncp.exp(-1j * (muxi - muxj - 2 * muyj))
                             )
                         )
 
@@ -5554,10 +5598,10 @@ class cell(beamline):
                                 * K1Lj
                                 * bxi
                                 * bxj
-                                * np.exp(2j * (muxi - muxj))
+                                * ncp.exp(2j * (muxi - muxj))
                             )
                             d20002 = (
-                                1j / 16 * K1Li * K1Lj * bxi * bxj * np.exp(2j * muxi)
+                                1j / 16 * K1Li * K1Lj * bxi * bxj * ncp.exp(2j * muxi)
                             )
                             d00112 = (
                                 1j
@@ -5566,30 +5610,33 @@ class cell(beamline):
                                 * K1Lj
                                 * byi
                                 * byj
-                                * np.exp(2j * (muyi - muyj))
+                                * ncp.exp(2j * (muyi - muyj))
                             )
                             d00202 = (
-                                1j / 16 * K1Li * K1Lj * byi * byj * np.exp(2j * muyi)
+                                1j / 16 * K1Li * K1Lj * byi * byj * ncp.exp(2j * muyi)
                             )
                             d10003 = (
                                 1j
                                 / 8
                                 * K1Li
                                 * K1Lj
-                                * np.sqrt(bxi)
+                                * ncp.sqrt(bxi)
                                 * bxj
                                 * dxi
-                                * (np.exp(1j * muxi) - np.exp(-1j * (muxi - 2 * muxj)))
+                                * (
+                                    ncp.exp(1j * muxi)
+                                    - ncp.exp(-1j * (muxi - 2 * muxj))
+                                )
                             )
                             d00004 = (
                                 1j
                                 / 4
                                 * K1Li
                                 * K1Lj
-                                * np.sqrt(bxi * bxj)
+                                * ncp.sqrt(bxi * bxj)
                                 * dxi
                                 * dxj
-                                * np.exp(1j * (muxi - muxj))
+                                * ncp.exp(1j * (muxi - muxj))
                             )
                         if j > i:
                             h11002 += d11002
@@ -5640,13 +5687,13 @@ class cell(beamline):
         if not bindex:
             bindex = self.getIndex("moni")
         nbpm, ncor = len(bindex), len(cindex)
-        rm = np.zeros((2 * nbpm, 2 * ncor))
-        b = np.array([0.0, 1.0, 0.0, 0.0])
+        rm = ncp.zeros((2 * nbpm, 2 * ncor))
+        b = ncp.array([0.0, 1.0, 0.0, 0.0])
         for ic, ci in enumerate(cindex):
             m = self.getOneTurnMatrix(ci)[:4, :4]
-            a = np.eye(4) - m
-            X = np.linalg.solve(a, b)
-            X = np.reshape(X, (4, 1))
+            a = ncp.eye(4) - m
+            X = ncp.linalg.solve(a, b)
+            X = ncp.reshape(X, (4, 1))
             for ib, bi in enumerate(bindex):
                 mij = self.getTransMat(ci, bi)[:4, :4]
                 rme = mij * X
@@ -5656,12 +5703,12 @@ class cell(beamline):
                 sys.stdout.write(
                     "\rH: cor index: %04i, bpm index: %04i" % (ic + 1, ib + 1)
                 )
-        b = np.array([0.0, 0.0, 0.0, 1.0])
+        b = ncp.array([0.0, 0.0, 0.0, 1.0])
         for ic, ci in enumerate(cindex):
             m = self.getOneTurnMatrix(ci)[:4, :4]
-            a = np.eye(4) - m
-            X = np.linalg.solve(a, b)
-            X = np.reshape(X, (4, 1))
+            a = ncp.eye(4) - m
+            X = ncp.linalg.solve(a, b)
+            X = ncp.reshape(X, (4, 1))
             for ib, bi in enumerate(bindex):
                 mij = self.getTransMat(ci, bi)[:4, :4]
                 rme = mij * X
@@ -5682,24 +5729,24 @@ class cell(beamline):
             bpms = self.getElements("moni")
         if not cors:
             cors = self.getElements("kick")
-        ormx = np.zeros((len(bpms), len(cors)))
-        ormy = np.zeros((len(bpms), len(cors)))
+        ormx = ncp.zeros((len(bpms), len(cors)))
+        ormy = ncp.zeros((len(bpms), len(cors)))
         ic = [self.bl.index(cor) for cor in cors]
         ib = [self.bl.index(bpm) for bpm in bpms]
         for m, cor in enumerate(cors):
             for n, bpm in enumerate(bpms):
-                sbx = np.sqrt(self.betax[ic[m]] * self.betax[ib[n]])
-                sby = np.sqrt(self.betay[ic[m]] * self.betay[ib[n]])
-                cpx = np.cos(
-                    abs(self.mux[ic[m]] - self.mux[ib[n]]) * twopi - np.pi * self.nux
+                sbx = ncp.sqrt(self.betax[ic[m]] * self.betax[ib[n]])
+                sby = ncp.sqrt(self.betay[ic[m]] * self.betay[ib[n]])
+                cpx = ncp.cos(
+                    abs(self.mux[ic[m]] - self.mux[ib[n]]) * twopi - ncp.pi * self.nux
                 )
-                cpy = np.cos(
-                    abs(self.muy[ic[m]] - self.muy[ib[n]]) * twopi - np.pi * self.nuy
+                cpy = ncp.cos(
+                    abs(self.muy[ic[m]] - self.muy[ib[n]]) * twopi - ncp.pi * self.nuy
                 )
                 ormx[n, m] = sbx * cpx
                 ormy[n, m] = sby * cpy
-        ormx /= 2 * np.sin(np.pi * self.nux)
-        ormy /= 2 * np.sin(np.pi * self.nuy)
+        ormx /= 2 * ncp.sin(ncp.pi * self.nux)
+        ormy /= 2 * ncp.sin(ncp.pi * self.nuy)
         self.ormx, self.ormy = ormx, ormy
 
     def getRespMat(self, bpms=None, quads=None, dk=0.001, verbose=False):
@@ -5725,12 +5772,12 @@ class cell(beamline):
             quads = self.getElements("quad", prefix="q")
         nbpm, nquad = len(bpms), len(quads)
 
-        betarmx = np.zeros((nbpm, nquad))
-        betarmy = np.zeros((nbpm, nquad))
-        parmx = np.zeros((nbpm, nquad))
-        parmy = np.zeros((nbpm, nquad))
-        disprm = np.zeros((nbpm, nquad))
-        tunerm = np.zeros((2, nquad))
+        betarmx = ncp.zeros((nbpm, nquad))
+        betarmy = ncp.zeros((nbpm, nquad))
+        parmx = ncp.zeros((nbpm, nquad))
+        parmy = ncp.zeros((nbpm, nquad))
+        disprm = ncp.zeros((nbpm, nquad))
+        tunerm = ncp.zeros((2, nquad))
 
         for i, quad in enumerate(quads):
             quad.put("K1", quad.K1 + dk)
@@ -5747,7 +5794,7 @@ class cell(beamline):
             parmx[:, i] = dphx / dk
             parmy[:, i] = dphy / dk
             disprm[:, i] = detax / dk
-            tunerm[:, i] = np.array([dnux / dk, dnuy / dk])
+            tunerm[:, i] = ncp.array([dnux / dk, dnuy / dk])
             quad.put("K1", quad.K1 - dk)
             if verbose:
                 sys.stdout.write(
@@ -5773,11 +5820,11 @@ class cell(beamline):
         if not sexts:
             sexts = self.getElements("sext", prefix="sm")
         nsext = len(sexts)
-        chrm = np.zeros((2, nsext))
+        chrm = ncp.zeros((2, nsext))
         for i, sext in enumerate(sexts):
             sext.put("K2", sext.K2 + dk)
             self.chrom()
-            chrm[:, i] = np.array([(self.chx - chx0) / dk, (self.chy - chy0) / dk])
+            chrm[:, i] = ncp.array([(self.chx - chx0) / dk, (self.chy - chy0) / dk])
             sext.put("K2", sext.K2 - dk)
             if verbose:
                 sys.stdout.write("\r%04i out of %04i: %s" % (i + 1, nsext, sext.name))
@@ -5792,11 +5839,11 @@ class cell(beamline):
         find dynamic aperture with matrix tracking and thin-len kicks
         not very accurate for off-momentum dyap
         """
-        x = np.linspace(xmin, xmax, nx)
-        y = np.linspace(ymin, ymax, ny)
-        xgrid, ygrid = np.meshgrid(x, y)
-        xin = np.zeros((7, nx * ny))
-        xin[-1] = np.arange(nx * ny)
+        x = ncp.linspace(xmin, xmax, nx)
+        y = ncp.linspace(ymin, ymax, ny)
+        xgrid, ygrid = ncp.meshgrid(x, y)
+        xin = ncp.zeros((7, nx * ny))
+        xin[-1] = ncp.arange(nx * ny)
         xin[0] = xgrid.flatten()
         xin[2] = ygrid.flatten()
         xin[5] = dp
@@ -5824,18 +5871,18 @@ class cell(beamline):
         """
         find dynamic aperture symplectic kick-drift
         """
-        x = np.linspace(xmin, xmax, int(nx))
-        y = np.linspace(ymin, ymax, int(ny))
-        xgrid, ygrid = np.meshgrid(x, y)
-        xin = np.zeros((7, nx * ny))
-        xin[-1] = np.arange(nx * ny)
+        x = ncp.linspace(xmin, xmax, int(nx))
+        y = ncp.linspace(ymin, ymax, int(ny))
+        xgrid, ygrid = ncp.meshgrid(x, y)
+        xin = ncp.zeros((7, nx * ny))
+        xin[-1] = ncp.arange(nx * ny)
         xin[0] = xgrid.flatten()
         xin[2] = ygrid.flatten()
         xin[5] = dp
-        tbt = np.zeros((nturn, 6, nx * ny))
+        tbt = ncp.zeros((nturn, 6, nx * ny))
         for i in xrange(nturn):
             xin[:6] = self.eletrack(xin[:6])[-1]
-            tbt[i] = np.array(xin[:6])
+            tbt[i] = ncp.array(xin[:6])
             if verbose:
                 sys.stdout.write(
                     "\r--- tracking: %04i out of %04i is being done (%3i%%) ---"
@@ -5859,8 +5906,8 @@ class cell(beamline):
                 ]
             else:
                 rngx, rngy = [0.0, 0.5], [0.0, 0.5]
-            fmx, fmy = np.zeros(nx * ny), np.zeros(nx * ny)
-            df1 = np.zeros(nx * ny)
+            fmx, fmy = ncp.zeros(nx * ny), ncp.zeros(nx * ny)
+            df1 = ncp.zeros(nx * ny)
             for i in xrange(nx * ny):
                 if verbose:
                     sys.stdout.write(
@@ -5868,8 +5915,8 @@ class cell(beamline):
                         % (i + 1, nx * ny, (i + 1) * 100.0 / nx / ny)
                     )
                     sys.stdout.flush()
-                if any(np.isnan(tbt[:, 0, i])) or any(np.isnan(tbt[:, 2, i])):
-                    df1[i] = np.nan
+                if any(ncp.isnan(tbt[:, 0, i])) or any(ncp.isnan(tbt[:, 2, i])):
+                    df1[i] = ncp.nan
                     continue
                 else:
                     if naf:
@@ -5901,12 +5948,12 @@ class cell(beamline):
                     # print '%15.6e%15.6e%15.6e%15.6e'%(v1x,v2x,v1y,v2y)
                     dvx2 = (v1x - v2x) ** 2
                     dvy2 = (v1y - v2y) ** 2
-                    df1[i] = np.log10(np.sqrt(dvx2 + dvy2))
+                    df1[i] = ncp.log10(ncp.sqrt(dvx2 + dvy2))
                     fmx[i] = (v1x + v2x) / 2
                     fmy[i] = (v1y + v2y) / 2
             df = df1.reshape((ny, nx))
             self.dyap["dfu"] = df
-            self.dyap["fma"] = np.array([fmx, fmy, df1]).transpose()
+            self.dyap["fma"] = ncp.array([fmx, fmy, df1]).transpose()
 
     def pltdyap(
         self, xyunit="mm", figsize=(8, 8), mode="contourf", fn=None, fndfu=None
@@ -5940,7 +5987,7 @@ class cell(beamline):
             if "dfu" in self.dyap.keys():
                 plt.figure(figsize=figsize)
                 maskeddfu = np.ma.array(
-                    self.dyap["dfu"], mask=np.isnan(self.dyap["dfu"])
+                    self.dyap["dfu"], mask=ncp.isnan(self.dyap["dfu"])
                 )
                 if mode == "contourf":
                     df = plt.contourf(
@@ -5982,9 +6029,9 @@ class cell(beamline):
                 self.betax[0], self.alfax[0], self.betay[0], self.alfay[0], combine=True
             )
             """
-            sqtbx = np.sqrt(self.betax[0])
+            sqtbx = ncp.sqrt(self.betax[0])
             ax = self.alfax[0]
-            sqtby = np.sqrt(self.betay[0])
+            sqtby = ncp.sqrt(self.betay[0])
             ay = self.alfay[0]
             m = np.mat([[1/sqtbx,0,0,0],[ax/sqtbx,sqtbx,0,0],
                         [0,0,1/sqtby,0],[0,0,ay/sqtby,sqtby]])
@@ -5992,11 +6039,11 @@ class cell(beamline):
             """
             n = self.dyap["tbt"].shape[2]
             for i in xrange(n):
-                a0 = np.array(cs * self.dyap["tbt"][:, :4, i].transpose())
-                xpw0 = np.fft.fft(a0[0])
-                self.dyap["fma"][i, 0] = pickPeak(np.abs(xpw0), rng=[0, 1])[0]
-                xpw0 = np.fft.fft(a0[1])
-                self.dyap["fma"][i, 1] = pickPeak(np.abs(xpw0), rng=[0, 1])[0]
+                a0 = ncp.array(cs * self.dyap["tbt"][:, :4, i].transpose())
+                xpw0 = ncp.fft.fft(a0[0])
+                self.dyap["fma"][i, 0] = pickPeak(ncp.abs(xpw0), rng=[0, 1])[0]
+                xpw0 = ncp.fft.fft(a0[1])
+                self.dyap["fma"][i, 1] = pickPeak(ncp.abs(xpw0), rng=[0, 1])[0]
 
         plt.figure(figsize=figsize)
         plt.scatter(
@@ -6039,8 +6086,8 @@ class cell(beamline):
             plt.figure(figsize=figsize)
             n1, n2, n3 = self.dyap["tbt"].shape
             for i in xrange(0, n3, densityGap):
-                if any(np.isnan(self.dyap["tbt"][:, 0, i])) or any(
-                    np.isnan(self.dyap["tbt"][:, 2, i])
+                if any(ncp.isnan(self.dyap["tbt"][:, 0, i])) or any(
+                    ncp.isnan(self.dyap["tbt"][:, 2, i])
                 ):
                     continue
                 else:
@@ -6074,18 +6121,18 @@ class cell(beamline):
         """
         get tune-shift-with-amplitude by tracking
         """
-        dA = np.linspace(Amin, Amax, int(nA))
-        xin = np.zeros((6, nA))
+        dA = ncp.linspace(Amin, Amax, int(nA))
+        xin = ncp.zeros((6, nA))
         if plane == "x":
             xin[0] = dA
             xin[2] = nA * [sA]
         elif plane == "y":
             xin[2] = dA
             xin[0] = nA * [sA]
-        tbt = np.zeros((nturn, 6, nA))
+        tbt = ncp.zeros((nturn, 6, nA))
         for i in xrange(nturn):
             xin[:6] = self.eletrack(xin[:6])[-1]
-            tbt[i] = np.array(xin[:6])
+            tbt[i] = ncp.array(xin[:6])
             sys.stdout.write(
                 "\r--- tracking: %04i out of %04i is being done (%3i%%) ---"
                 % (i + 1, nturn, (i + 1) * 100.0 / nturn)
@@ -6108,9 +6155,9 @@ class cell(beamline):
                 self.betax[0], self.alfax[0], self.betay[0], self.alfay[0], combine=True
             )
             """
-            sqtbx = np.sqrt(self.betax[0])
+            sqtbx = ncp.sqrt(self.betax[0])
             ax = self.alfax[0]
-            sqtby = np.sqrt(self.betay[0])
+            sqtby = ncp.sqrt(self.betay[0])
             ay = self.alfay[0]
             m = np.mat([[1/sqtbx,0,0,0],[ax/sqtbx,sqtbx,0,0],
                         [0,0,1/sqtby,0],[0,0,ay/sqtby,sqtby]])
@@ -6119,11 +6166,11 @@ class cell(beamline):
             """
         for i in xrange(nA):
             if crossHalfInt:
-                a0 = np.array(csm * tbt[:, :4, i].transpose())
-                xpw0 = np.fft.fft(a0[0])
-                nu1 = pickPeak(np.abs(xpw0), rng=[0, 1])[0]
-                xpw0 = np.fft.fft(a0[1])
-                nu2 = pickPeak(np.abs(xpw0), rng=[0, 1])[0]
+                a0 = ncp.array(csm * tbt[:, :4, i].transpose())
+                xpw0 = ncp.fft.fft(a0[0])
+                nu1 = pickPeak(ncp.abs(xpw0), rng=[0, 1])[0]
+                xpw0 = ncp.fft.fft(a0[1])
+                nu2 = pickPeak(ncp.abs(xpw0), rng=[0, 1])[0]
                 nu.append([dA[i], nu1, nu2])
             else:
                 nu.append(
@@ -6133,12 +6180,12 @@ class cell(beamline):
                         naff(tbt[:, 2, i], ni=1, verbose=0, rng=rngy)[0][0],
                     ]
                 )
-        nu = np.array(nu)
+        nu = ncp.array(nu)
         Anux = np.polyfit(nu[:, 0], nu[:, 1], polyorder)
         Anuy = np.polyfit(nu[:, 0], nu[:, 2], polyorder)
         if verbose:
-            nuxfit = np.polyval(Anux, nu[:, 0])
-            nuyfit = np.polyval(Anuy, nu[:, 0])
+            nuxfit = ncp.polyval(Anux, nu[:, 0])
+            nuyfit = ncp.polyval(Anuy, nu[:, 0])
             plt.figure(figsize=(8, 6))
             plt.plot(
                 nu[:, 0],
@@ -6180,15 +6227,15 @@ class cell(beamline):
         """
         get tune-shift-with-amplitude by tracking
         """
-        dAx = np.linspace(xyaxis[0], xyaxis[1], int(nA))
-        dAy = np.linspace(xyaxis[2], xyaxis[3], int(nA))
-        xin = np.zeros((6, nA))
+        dAx = ncp.linspace(xyaxis[0], xyaxis[1], int(nA))
+        dAy = ncp.linspace(xyaxis[2], xyaxis[3], int(nA))
+        xin = ncp.zeros((6, nA))
         xin[0] = dAx
         xin[2] = dAy
-        tbt = np.zeros((nturn, 6, nA))
+        tbt = ncp.zeros((nturn, 6, nA))
         for i in xrange(nturn):
             xin[:6] = self.eletrack(xin[:6])[-1]
-            tbt[i] = np.array(xin[:6])
+            tbt[i] = ncp.array(xin[:6])
             sys.stdout.write(
                 "\r--- tracking: %04i out of %04i is being done (%3i%%) ---"
                 % (i + 1, nturn, (i + 1) * 100.0 / nturn)
@@ -6211,9 +6258,9 @@ class cell(beamline):
                 self.betax[0], self.alfax[0], self.betay[0], self.alfay[0], combine=True
             )
             """
-            sqtbx = np.sqrt(self.betax[0])
+            sqtbx = ncp.sqrt(self.betax[0])
             ax = self.alfax[0]
-            sqtby = np.sqrt(self.betay[0])
+            sqtby = ncp.sqrt(self.betay[0])
             ay = self.alfay[0]
             m = np.mat([[1/sqtbx,0,0,0],[ax/sqtbx,sqtbx,0,0],
                         [0,0,1/sqtby,0],[0,0,ay/sqtby,sqtby]])
@@ -6222,11 +6269,11 @@ class cell(beamline):
             """
         for i in xrange(nA):
             if crossHalfInt:
-                a0 = np.array(csm * tbt[:, :4, i].transpose())
-                xpw0 = np.fft.fft(a0[0])
-                nu1 = pickPeak(np.abs(xpw0), rng=[0, 1])[0]
-                xpw0 = np.fft.fft(a0[1])
-                nu2 = pickPeak(np.abs(xpw0), rng=[0, 1])[0]
+                a0 = ncp.array(csm * tbt[:, :4, i].transpose())
+                xpw0 = ncp.fft.fft(a0[0])
+                nu1 = pickPeak(ncp.abs(xpw0), rng=[0, 1])[0]
+                xpw0 = ncp.fft.fft(a0[1])
+                nu2 = pickPeak(ncp.abs(xpw0), rng=[0, 1])[0]
                 nu.append([dAx[i], dAy[i], nu1, nu2])
             else:
                 nu.append(
@@ -6237,12 +6284,12 @@ class cell(beamline):
                         naff(tbt[:, 2, i], ni=1, verbose=0, rng=rngy)[0][0],
                     ]
                 )
-        nu = np.array(nu)
+        nu = ncp.array(nu)
         # Anux = np.polyfit(nu[:,0],nu[:,1],polyorder)
         # Anuy = np.polyfit(nu[:,0],nu[:,2],polyorder)
         if verbose:
-            # nuxfit = np.polyval(Anux,nu[:,0])
-            # nuyfit = np.polyval(Anuy,nu[:,0])
+            # nuxfit = ncp.polyval(Anux,nu[:,0])
+            # nuyfit = ncp.polyval(Anuy,nu[:,0])
             plt.figure(figsize=(8, 6))
             # plt.plot(nu[:,0],nuxfit,'b-',
             #         label=r"$\frac{d\nu_x}{d%s^2}=%.2f$"%(plane,Anux[-3]),lw=2)
@@ -6282,18 +6329,18 @@ class cell(beamline):
         find dynamic aperture x vs. delta with symplectic kick-drift
         sA: small amplitude to avoid zero amplitude
         """
-        x = np.linspace(xmin, xmax, int(nx))
-        y = np.linspace(dmin, dmax, int(nd))
-        xgrid, ygrid = np.meshgrid(x, y)
-        xin = np.zeros((7, nx * nd))
-        xin[-1] = np.arange(nx * nd)
+        x = ncp.linspace(xmin, xmax, int(nx))
+        y = ncp.linspace(dmin, dmax, int(nd))
+        xgrid, ygrid = ncp.meshgrid(x, y)
+        xin = ncp.zeros((7, nx * nd))
+        xin[-1] = ncp.arange(nx * nd)
         xin[0] = xgrid.flatten()
-        xin[2] = np.ones(nx * nd) * sA
+        xin[2] = ncp.ones(nx * nd) * sA
         xin[5] = ygrid.flatten()
-        tbt = np.zeros((nturn, 6, nx * nd))
+        tbt = ncp.zeros((nturn, 6, nx * nd))
         for i in xrange(nturn):
             xin[:6] = self.eletrack(xin[:6])[-1]
-            tbt[i] = np.array(xin[:6])
+            tbt[i] = ncp.array(xin[:6])
             if verbose:
                 sys.stdout.write(
                     "\r--- tracking: %04i out of %04i is being done (%3i%%) ---"
@@ -6306,7 +6353,7 @@ class cell(beamline):
         self.dyapXD = {"xgrid": xgrid, "dgrid": ygrid, "dyap": dyap, "tbt": tbt}
         # --- if diffusion
         if dfu:
-            df = np.zeros(nx * nd)
+            df = ncp.zeros(nx * nd)
             if tunewindow:
                 rngx = [
                     self.nux - int(self.nux) - tunewindow,
@@ -6325,8 +6372,8 @@ class cell(beamline):
                         % (i + 1, nx * nd, (i + 1) * 100.0 / nx / nd)
                     )
                     sys.stdout.flush()
-                if any(np.isnan(tbt[:, 0, i])) or any(np.isnan(tbt[:, 2, i])):
-                    df[i] = np.nan
+                if any(ncp.isnan(tbt[:, 0, i])) or any(ncp.isnan(tbt[:, 2, i])):
+                    df[i] = ncp.nan
                     continue
                 else:
                     if naf:
@@ -6357,7 +6404,7 @@ class cell(beamline):
                         )[0]
                     dvx2 = (v1x - v2x) ** 2
                     dvy2 = (v1y - v2y) ** 2
-                    df[i] = np.log10(np.sqrt(dvx2 + dvy2))
+                    df[i] = ncp.log10(ncp.sqrt(dvx2 + dvy2))
             df = df.reshape(xgrid.shape)
             self.dyapXD["dfu"] = df
 
@@ -6393,7 +6440,7 @@ class cell(beamline):
             if "dfu" in self.dyapXD.keys():
                 plt.figure(figsize=figsize)
                 maskeddfu = np.ma.array(
-                    self.dyapXD["dfu"], mask=np.isnan(self.dyapXD["dfu"])
+                    self.dyapXD["dfu"], mask=ncp.isnan(self.dyapXD["dfu"])
                 )
                 if mode == "contourf":
                     df = plt.contourf(
@@ -6449,15 +6496,15 @@ def svdcor(x, rm, rcond=1e-6):
     dk:  needed corrector strength
     xr:  expectation after correction
     """
-    u, s, v = np.linalg.svd(rm)
-    dk = np.zeros(v.shape[0], dtype=np.float)
+    u, s, v = ncp.linalg.svd(rm)
+    dk = ncp.zeros(v.shape[0], dtype=ncp.float64)
     for m in range(len(s)):
         if s[m] / s[0] >= rcond:
-            dk += v[m, :] / s[m] * np.dot(x, u[:, m])
+            dk += v[m, :] / s[m] * ncp.dot(x, u[:, m])
         else:
             break
     xr = np.mat(x).reshape(-1, 1) + np.mat(rm) * np.mat(dk).reshape(-1, 1)
-    return dk, np.array(xr)[:, 0]
+    return dk, ncp.array(xr)[:, 0]
 
 
 def micado(x, rm, n=1, verbose=False):
@@ -6484,35 +6531,35 @@ def micado(x, rm, n=1, verbose=False):
         # --- a[i] is the most effective coefficient for i-th corrector
         # --- xres is residual after ampplying a
         # --- xressum is sum of residual
-        a = np.zeros(rm.shape[1])
-        xres = np.zeros_like(rm)
-        xressum = np.zeros_like(a)
+        a = ncp.zeros(rm.shape[1])
+        xres = ncp.zeros_like(rm)
+        xressum = ncp.zeros_like(a)
         for i in range(rm.shape[1]):
             a[i] = sum(x * rm[:, i]) / sum(rm[:, i] * rm[:, i])
             xres[:, i] = x - a[i] * rm[:, i]
             xressum[i] = sum(xres[:, i] * xres[:, i])
-        ki = np.argmin(xressum)  # No. 1 effective corr
+        ki = ncp.argmin(xressum)  # No. 1 effective corr
         x = xres[:, ki]  # residual become goal to be corrected
         k.append(ki)  # corrector index
         c.append(a[ki])  # corrector value
         xr.append(xressum[ki])  # residual
         if verbose:
             print("%9d%9d%9.3f%9.3f" % (n, ki, a[ki], xressum[ki]))
-    dk = np.zeros(rm.shape[1])
+    dk = ncp.zeros(rm.shape[1])
     # --- sum over
     for i, ki in enumerate(k):
         dk[ki] -= c[i]
     return dk, x
 
 
-def rotmat(angle=np.pi / 4):
+def rotmat(angle=ncp.pi / 4):
     """
     rotating matrix with a given angle
     facing the beam, rotate counter-clockwise is defined as positive
     """
-    c = np.cos(angle)
-    s = np.sin(angle)
-    m = np.eye(6)
+    c = ncp.cos(angle)
+    s = ncp.sin(angle)
+    m = ncp.eye(6)
     for i in range(4):
         m[i, i] = c
     m[0, 2] = s
@@ -6527,7 +6574,7 @@ def gint(a, b):
     Eight point Gaussian Integration over interval a<x<b
     x,w = gint(a,b)
     """
-    y = np.array(
+    y = ncp.array(
         [
             -0.960289856497536,
             -0.796666477413627,
@@ -6539,7 +6586,7 @@ def gint(a, b):
             0.960289856497536,
         ]
     )
-    v = np.array(
+    v = ncp.array(
         [
             0.101228536290376,
             0.222381034453374,
@@ -6588,8 +6635,8 @@ def twmat(elem, s):
         fe = wigg(L=s, Bw=elem.Bw, E=elem.E)
     else:
         raise RuntimeError('unknown type for element "%s"' % elem.name)
-    mxy = np.take(np.take(fe.tm, [0, 1, 2, 3, 5], axis=0), [0, 1, 2, 3, 5], axis=1)
-    # my = np.take(np.take(fe.tm,[2,3,5],axis=0),[2,3,5],axis=1)
+    mxy = ncp.take(ncp.take(fe.tm, [0, 1, 2, 3, 5], axis=0), [0, 1, 2, 3, 5], axis=1)
+    # my = ncp.take(ncp.take(fe.tm,[2,3,5],axis=0),[2,3,5],axis=1)
     return mxy, fe.tx, fe.ty
 
 
@@ -6604,7 +6651,7 @@ def phasetrans(m, tw0, neglen=False):
     """
     get phase advance by transport matrix
     """
-    dph = np.arctan(m[0, 1] / (m[0, 0] * tw0[0] - m[0, 1] * tw0[1])) / twopi
+    dph = ncp.arctan(m[0, 1] / (m[0, 0] * tw0[0] - m[0, 1] * tw0[1])) / twopi
     if neglen:
         if dph > 0:
             return dph - 0.5
@@ -6623,7 +6670,7 @@ def trans2twiss(a):
     input (a) is a 2x2 coordinate transport matrix
     return a 3x3 twiss transport matrix [beta, alfa, gama]
     """
-    return np.array(
+    return ncp.array(
         [
             [a[0, 0] ** 2, -2 * a[0, 0] * a[0, 1], a[0, 1] ** 2],
             [-a[1, 0] * a[0, 0], 1 + 2 * a[0, 1] * a[1, 0], -a[0, 1] * a[1, 1]],
@@ -6637,17 +6684,17 @@ def matrix2twiss(R, plane="x"):
     get fractional mu and Twiss from one turn transport matrix
     """
     if plane == "x":
-        r = np.take(np.take(R, [0, 1, 5], axis=0), [0, 1, 5], axis=1)
+        r = ncp.take(ncp.take(R, [0, 1, 5], axis=0), [0, 1, 5], axis=1)
     elif plane == "y":
-        r = np.take(np.take(R, [2, 3, 5], axis=0), [2, 3, 5], axis=1)
+        r = ncp.take(ncp.take(R, [2, 3, 5], axis=0), [2, 3, 5], axis=1)
     else:
         raise RuntimeError("plane must be 'x' or 'y'")
     if abs(r[0, 0] + r[1, 1]) >= 2:
         raise RuntimeError("det(M) >= 2: no stable solution in %s plane" % plane)
-    mu = np.arccos((r[0, 0] + r[1, 1]) / 2) / twopi
+    mu = ncp.arccos((r[0, 0] + r[1, 1]) / 2) / twopi
     if r[0, 1] < 0:
         mu = 1 - mu
-    s = np.sin(twopi * mu)
+    s = ncp.sin(twopi * mu)
     beta = r[0, 1] / s
     alfa = (r[0, 0] - r[1, 1]) / (2 * s)
     gama = -r[1, 0] / s
@@ -6658,9 +6705,9 @@ def matrix2disp(R):
     """
     calculate dispersions based on transport matrix
     """
-    a = R[:4, :4] - np.eye(4)
+    a = R[:4, :4] - ncp.eye(4)
     b = -R[:4, 5]
-    dxy = np.linalg.solve(a, b)
+    dxy = ncp.linalg.solve(a, b)
     return dxy[0], dxy[1], dxy[2], dxy[3]
 
 
@@ -6677,41 +6724,41 @@ def txt2latt(fn, verbose=False):
             print("LN%3d: %s" % (i + 3, le))
         ele = le.split()
         if ele[1] == "DW":
-            t = kmap(ele[0], L=float(ele[2]), kmap2fn=ele[7], E=3)
+            t = kmap(ele[0], L=ncp.float64(ele[2]), kmap2fn=ele[7], E=3)
         elif ele[1] == "IVU":
-            t = kmap(ele[0], L=float(ele[2]), kmap2fn=ele[7], E=3)
+            t = kmap(ele[0], L=ncp.float64(ele[2]), kmap2fn=ele[7], E=3)
         elif ele[1] == "EPU":
-            t = kmap(ele[0], L=float(ele[2]), kmap2fn=ele[7], E=3)
+            t = kmap(ele[0], L=ncp.float64(ele[2]), kmap2fn=ele[7], E=3)
         elif ele[1] == "SQ_TRIM":
-            t = kick(ele[0], L=float(ele[2]))
+            t = kick(ele[0], L=ncp.float64(ele[2]))
         elif ele[1] == "BPM":
-            t = moni(ele[0], L=float(ele[2]))
+            t = moni(ele[0], L=ncp.float64(ele[2]))
         elif ele[1] == "TRIMD":
-            t = kick(ele[0], L=float(ele[2]))
+            t = kick(ele[0], L=ncp.float64(ele[2]))
         elif ele[1].startwith("MARK"):
-            t = drif(ele[0], L=float(ele[2]))
+            t = drif(ele[0], L=ncp.float64(ele[2]))
         elif ele[1] == "TRIMY":
-            t = kick(ele[0], L=float(ele[2]))
+            t = kick(ele[0], L=ncp.float64(ele[2]))
         elif ele[1] == "TRIMX":
-            t = kick(ele[0], L=float(ele[2]))
+            t = kick(ele[0], L=ncp.float64(ele[2]))
         elif ele[1] == "FTRIM":
-            t = kick(ele[0], L=float(ele[2]))
+            t = kick(ele[0], L=ncp.float64(ele[2]))
         elif ele[1] == "SEXT":
-            t = sext(ele[0], L=float(ele[2]), K2=float(ele[5]))
+            t = sext(ele[0], L=ncp.float64(ele[2]), K2=ncp.float64(ele[5]))
         elif ele[1] == "DIPOLE":
             t = bend(
                 ele[0],
-                L=float(ele[2]),
-                angle=float(ele[6]),
-                e1=float(ele[6]) / 2,
-                e2=float(ele[6]) / 2,
+                L=ncp.float64(ele[2]),
+                angle=ncp.float64(ele[6]),
+                e1=ncp.float64(ele[6]) / 2,
+                e2=ncp.float64(ele[6]) / 2,
             )
         elif ele[1] == "QUAD":
-            t = quad(ele[0], L=float(ele[2]), K1=float(ele[4]))
+            t = quad(ele[0], L=ncp.float64(ele[2]), K1=ncp.float64(ele[4]))
         elif ele[1].startwith("DRIF"):
-            t = drif(ele[0], L=float(ele[2]))
+            t = drif(ele[0], L=ncp.float64(ele[2]))
         elif ele[1] == "WATCH":
-            t = drif(ele[0], L=float(ele[2]))
+            t = drif(ele[0], L=ncp.float64(ele[2]))
         else:
             print("unknown element type!")
             pass
@@ -6836,7 +6883,7 @@ def madParse(a, upper=True):
                     drt = 2
                 else:
                     raise RuntimeError("unknown aperture direction")
-                apxy[drt] = float(aps)
+                apxy[drt] = ncp.float64(aps)
             else:
                 print("  ignored attribute for scraper: %s" % rs)
         return "%s = latt.aper('%s', L = %s, aper=[%s,%s,%s,%s])" % (
@@ -6952,9 +6999,9 @@ def chkap(x, xap=[-1.0, 1.0], yap=[-1.0, 1.0]):
     """
     check if particles are beyond boundary
     """
-    c1 = np.logical_and(x[0] > xap[0], x[0] < xap[1])
-    c2 = np.logical_and(x[2] > yap[0], x[2] < yap[1])
-    return np.logical_and(c1, c2)
+    c1 = ncp.logical_and(x[0] > xap[0], x[0] < xap[1])
+    c2 = ncp.logical_and(x[2] > yap[0], x[2] < yap[1])
+    return ncp.logical_and(c1, c2)
 
 
 def printmatrix(m, format="%9.6f", sep=" "):
@@ -6985,19 +7032,19 @@ def interp2d(x, y, z, xp, yp):
     if y[-1] < y[0]:
         y = y[::-1]
         z = z[::-1, :]
-    xyp = np.array([xp, yp]).reshape(2, -1)
-    zp = np.array([])
+    xyp = ncp.array([xp, yp]).reshape(2, -1)
+    zp = ncp.array([])
     for i in range(xyp.shape[1]):
         xi, yi = xyp[0, i], xyp[1, i]
-        if np.isnan(xi) or np.isnan(yi):
-            zp = np.append(zp, np.nan)
+        if ncp.isnan(xi) or ncp.isnan(yi):
+            zp = np.append(zp, ncp.nan)
         else:
             if xi > x[-1] or xi < x[0] or yi > y[-1] or yi < y[0]:
-                zp = np.append(zp, np.nan)
+                zp = np.append(zp, ncp.nan)
             else:
-                nx2 = np.nonzero(x >= xi)[0][0]
+                nx2 = ncp.nonzero(x >= xi)[0][0]
                 nx1 = nx2 - 1
-                ny2 = np.nonzero(y >= yi)[0][0]
+                ny2 = ncp.nonzero(y >= yi)[0][0]
                 ny1 = ny2 - 1
                 x1 = x[nx1]
                 x2 = x[nx2]
@@ -7102,7 +7149,7 @@ def optm(
     val0 = []
     for v in var:
         val0.append(getattr(v[0], v[1]))
-    val0 = np.array(val0)
+    val0 = ncp.array(val0)
     val = opt.fmin(
         goalfun,
         val0,
@@ -7130,8 +7177,8 @@ def symJ(nvar=4):
     """
     symplectic J matrix M.T * J * M = J
     """
-    # J = np.mat(np.zeros((nvar, nvar)))
-    J = np.zeros((nvar, nvar))
+    # J = np.mat(ncp.zeros((nvar, nvar)))
+    J = ncp.zeros((nvar, nvar))
     for i in xrange(int(nvar / 2)):
         J[2 * i, 2 * i + 1] = 1.0
         J[2 * i + 1, 2 * i] = -1.0
@@ -7146,7 +7193,7 @@ def quadrant(sn, cn):
     cn: cos(angle)
     return angle normalized by 2*pi
     """
-    return np.arctan2(sn, cn) / twopi
+    return ncp.arctan2(sn, cn) / twopi
 
 
 def vect2beta(v):
@@ -7158,11 +7205,11 @@ def vect2beta(v):
     bagname: name explanation for output
     ref: Willeke and Ripken, Methods of beam optics, DESY
     """
-    v = np.array(v)
-    z1 = (v[:, 0] + v[:, 1]) / np.sqrt(2)
-    z2 = (v[:, 0] - v[:, 1]) / np.sqrt(2)
-    z3 = (v[:, 2] + v[:, 3]) / np.sqrt(2)
-    z4 = (v[:, 2] - v[:, 3]) / np.sqrt(2)
+    v = ncp.array(v)
+    z1 = (v[:, 0] + v[:, 1]) / ncp.sqrt(2)
+    z2 = (v[:, 0] - v[:, 1]) / ncp.sqrt(2)
+    z3 = (v[:, 2] + v[:, 3]) / ncp.sqrt(2)
+    z4 = (v[:, 2] - v[:, 3]) / ncp.sqrt(2)
     z1 = z1.real
     z2 = z2.imag
     z3 = z3.real
@@ -7186,7 +7233,7 @@ def vect2beta(v):
     alfay_II = -(z3[2] * z3[3] + z4[2] * z4[3]) / nm2
     gamay_II = (z3[3] ** 2 + z4[3] ** 2) / nm2
     phy_II = quadrant(z4[2], z3[2])
-    bagName = np.array(
+    bagName = ncp.array(
         [
             ["betax_I", "alfax_I", "gamax_I", "phx_I"],
             ["betay_I", "alfay_I", "gamay_I", "phy_I"],
@@ -7194,7 +7241,7 @@ def vect2beta(v):
             ["betay_II", "alfay_II", "gamay_II", "phy_II"],
         ]
     ).T
-    bag = np.array(
+    bag = ncp.array(
         [
             [betax_I, alfax_I, gamax_I, phx_I],
             [betay_I, alfay_I, gamay_I, phy_I],
@@ -7225,7 +7272,7 @@ def monoPhase(ph, quadrant=[], startFromZero=False):
     """
     phm = copy.deepcopy(ph)
     if len(quadrant):
-        intpart = np.zeros_like(quadrant, dtype=float)
+        intpart = ncp.zeros_like(quadrant, dtype=ncp.float64)
         for i in range(len(quadrant) - 1):
             if quadrant[i] > quadrant[i + 1]:
                 intpart[i + 1 :] += 1.0
@@ -7249,13 +7296,13 @@ def tm2f2(tm, epslon=1e-6):
     nd = tm.shape[0]
     S = symJ(nvar=nd)
     # cm: coefficient matrix of linear part, Hamiltonian f2 = -1/2(v.cm.v^T)
-    cm = np.dot(np.linalg.inv(S), lnm2)
-    xi = np.eye(nd, dtype=int)
-    xv = np.ones(nd)
+    cm = ncp.dot(ncp.linalg.inv(S), lnm2)
+    xi = ncp.eye(nd, dtype=int)
+    xv = ncp.ones(nd)
     xc = []
     for i in range(nd):
         xc.append(mvp.mvp(xi[i : i + 1], xv[i : i + 1]))
-    cm = np.real(cm)
+    cm = ncp.real(cm)
     f2 = xc[0].const(0)
     for i in range(nd):
         for j in range(nd):
@@ -7273,12 +7320,12 @@ def f22tm(f2, truncate=9):
     """
     nd = f2.index.shape[1]
     # unit vector
-    xi = np.identity(nd, int)
-    xv = np.ones(nd)
+    xi = ncp.identity(nd, int)
+    xv = ncp.ones(nd)
     xc = []
     for i in range(nd):
         xc.append(mvp.mvp(xi[i : i + 1], xv[i : i + 1]))
-    m = np.zeros((nd, nd))
+    m = ncp.zeros((nd, nd))
     for ri in range(nd):
         r = f2.exp(xc[ri], truncate)
         for mi, cc in enumerate(r.index):
@@ -7292,60 +7339,60 @@ def f22tm_1(f2):
     Hamilton-Cayley, see A. Chao's lecture 9, page 21
     """
     n = f2.index.shape[1]
-    F = np.zeros((4, 4))
-    idx = np.zeros(n, dtype=int)
+    F = ncp.zeros((4, 4))
+    idx = ncp.zeros(n, dtype=int)
     idx[0] = 2
     F[0, 0] = f2.pickWithIndex(idx) * (-2)
-    idx = np.zeros(n, dtype=int)
+    idx = ncp.zeros(n, dtype=int)
     idx[0] = 1
     idx[1] = 1
     F[0, 1] = f2.pickWithIndex(idx) * (-1)
-    idx = np.zeros(n, dtype=int)
+    idx = ncp.zeros(n, dtype=int)
     idx[0] = 1
     idx[2] = 1
     F[0, 2] = f2.pickWithIndex(idx) * (-1)
-    idx = np.zeros(n, dtype=int)
+    idx = ncp.zeros(n, dtype=int)
     idx[0] = 1
     idx[3] = 1
     F[0, 3] = f2.pickWithIndex(idx) * (-1)
     F[1, 0] = F[0, 1]
-    idx = np.zeros(n, dtype=int)
+    idx = ncp.zeros(n, dtype=int)
     idx[1] = 2
     F[1, 1] = f2.pickWithIndex(idx) * (-2)
-    idx = np.zeros(n, dtype=int)
+    idx = ncp.zeros(n, dtype=int)
     idx[1] = 1
     idx[2] = 1
     F[1, 2] = f2.pickWithIndex(idx) * (-1)
-    idx = np.zeros(n, dtype=int)
+    idx = ncp.zeros(n, dtype=int)
     idx[1] = 1
     idx[3] = 1
     F[1, 3] = f2.pickWithIndex(idx) * (-1)
     F[2, 0] = F[0, 2]
     F[2, 1] = F[1, 2]
-    idx = np.zeros(n, dtype=int)
+    idx = ncp.zeros(n, dtype=int)
     idx[2] = 2
     F[2, 2] = f2.pickWithIndex(idx) * (-2)
-    idx = np.zeros(n, dtype=int)
+    idx = ncp.zeros(n, dtype=int)
     idx[2] = 1
     idx[3] = 1
     F[2, 3] = f2.pickWithIndex(idx) * (-1)
     F[3, 0] = F[0, 3]
     F[3, 1] = F[1, 3]
     F[3, 2] = F[2, 3]
-    idx = np.zeros(n, dtype=int)
+    idx = ncp.zeros(n, dtype=int)
     idx[3] = 2
     F[3, 3] = f2.pickWithIndex(idx) * (-2)
-    SF = np.dot(symJ(nvar=4), F)
+    SF = ncp.dot(symJ(nvar=4), F)
     w = np.linalg.eig(SF)[0]
-    a = np.ones((4, 4), dtype=complex)
+    a = ncp.ones((4, 4), dtype=complex)
     a[:, 1] = w
     a[:, 2] = w * w
     a[:, 3] = a[:, 2] * w
-    b = np.array([np.exp(wi) for wi in w])
-    x = np.dot(np.linalg.inv(a), b)
-    SF2 = np.dot(SF, SF)
-    SF3 = np.dot(SF2, SF)
-    M = x[0] * np.eye(4) + x[1] * SF + x[2] * SF2 + x[3] * SF3
+    b = ncp.array([ncp.exp(wi) for wi in w])
+    x = ncp.dot(ncp.linalg.inv(a), b)
+    SF2 = ncp.dot(SF, SF)
+    SF3 = ncp.dot(SF2, SF)
+    M = x[0] * ncp.eye(4) + x[1] * SF + x[2] * SF2 + x[3] * SF3
     return M.real
 
 
@@ -7369,26 +7416,26 @@ def f22h2(f2):
     c0110 = f2.pickWithIndex([0, 1, 1, 0])
     c1001 = f2.pickWithIndex([1, 0, 0, 1])
     h1010r = (
-        c0101 * (1 - ax * ay) / np.sqrt(bx * by) / 2
-        + c1001 * ay * np.sqrt(bx / by) / 2
-        + c0110 * ax * np.sqrt(by / bx) / 2
-        - c1010 * np.sqrt(bx * by) / 2
+        c0101 * (1 - ax * ay) / ncp.sqrt(bx * by) / 2
+        + c1001 * ay * ncp.sqrt(bx / by) / 2
+        + c0110 * ax * ncp.sqrt(by / bx) / 2
+        - c1010 * ncp.sqrt(bx * by) / 2
     )
     h1010i = (
-        c0101 * (ax + ay) / np.sqrt(bx * by) / 2
-        - c1001 * np.sqrt(bx / by) / 2
-        - c0110 * np.sqrt(by / bx) / 2
+        c0101 * (ax + ay) / ncp.sqrt(bx * by) / 2
+        - c1001 * ncp.sqrt(bx / by) / 2
+        - c0110 * ncp.sqrt(by / bx) / 2
     )
     h1001r = (
-        c0101 * (1 + ax * ay) / np.sqrt(bx * by) / 2
-        - c1001 * ay * np.sqrt(bx / by) / 2
-        - c0110 * ax * np.sqrt(by / bx) / 2
-        + c1010 * np.sqrt(bx * by) / 2
+        c0101 * (1 + ax * ay) / ncp.sqrt(bx * by) / 2
+        - c1001 * ay * ncp.sqrt(bx / by) / 2
+        - c0110 * ax * ncp.sqrt(by / bx) / 2
+        + c1010 * ncp.sqrt(bx * by) / 2
     )
     h1001i = (
-        c0101 * (ax - ay) / np.sqrt(bx * by) / 2
-        - c1001 * np.sqrt(bx / by) / 2
-        + c0110 * np.sqrt(by / bx) / 2
+        c0101 * (ax - ay) / ncp.sqrt(bx * by) / 2
+        - c1001 * ncp.sqrt(bx / by) / 2
+        + c0110 * ncp.sqrt(by / bx) / 2
     )
     return h1010r, h1010i, h1001r, h1001i
 
@@ -7407,15 +7454,15 @@ def pickPeak(xpw, rng=[0.0, 0.5], ith=1):
     T = len(xpw)
     r0, r1 = int(rng[0] * (T - 1)), int(rng[1] * (T - 1))
     pk = []
-    dtype = [("index", int), ("value", float)]
+    dtype = [("index", int), ("value", ncp.float64)]
     for i in range(r0 + 1, r1 - 1):
         if xpw[i] > xpw[i - 1] and xpw[i] > xpw[i + 1]:
             pk.append((i, xpw[i]))
-    pk = np.sort(np.array(pk, dtype), order="value")
+    pk = ncp.sort(ncp.array(pk, dtype), order="value")
     if len(pk):
         return pk[-ith][0] * 1.0 / (T - 1), pk[-ith][1]
     else:
-        i = np.argmax(xpw[r0:r1]) + r0
+        i = ncp.argmax(xpw[r0:r1]) + r0
         return i * 1.0 / (T - 1), xpw[i]
 
 
@@ -7431,25 +7478,25 @@ def getTuneTbT(
     return tune fractional
     """
     x = copy.deepcopy(xi)
-    x -= np.average(x)
+    x -= ncp.average(x)
     if not any(x):
-        return 0.0, 0.0, np.zeros((2, 2)), np.zeros((2, 2))
+        return 0.0, 0.0, ncp.zeros((2, 2)), ncp.zeros((2, 2))
     T = len(x)
     nmf = T - 1  # normalization factor
     if hann:
-        hw = np.arange(T) * 1.0 / (T - 1)
-        hw = (1 - np.cos(2 * np.pi * hw)) / 2
+        hw = ncp.arange(T) * 1.0 / (T - 1)
+        hw = (1 - ncp.cos(2 * ncp.pi * hw)) / 2
         x *= hw
-        S1 = np.sum(hw)
-        S2 = np.sum(hw**2)
+        S1 = ncp.sum(hw)
+        S2 = ncp.sum(hw**2)
         nmf *= S2 / S1
-    xpw = np.abs(np.fft.fft(x)) / nmf
+    xpw = ncp.abs(ncp.fft.fft(x)) / nmf
     xpk = pickPeak(xpw, rng=rng, ith=ith)
-    cxpw = np.cumsum(xpw)
+    cxpw = ncp.cumsum(xpw)
     f0, f1 = int((T - 1) * rng[0]), int((T - 1) * rng[1])
-    nf = np.arange(f0, f1) * 1.0 / (T - 1)
-    spt1 = np.array(zip(nf, xpw[f0:f1]))
-    spt2 = np.array(zip(nf, cxpw[f0:f1] * 2 / cxpw[-1]))
+    nf = ncp.arange(f0, f1) * 1.0 / (T - 1)
+    spt1 = ncp.array(zip(nf, xpw[f0:f1]))
+    spt2 = ncp.array(zip(nf, cxpw[f0:f1] * 2 / cxpw[-1]))
     if verbose:
         plt.figure(figsize=figsize)
         plt.subplot(121)
@@ -7483,8 +7530,8 @@ def naffprod(n, f):
     f: TbT data
     n: [nux,phi]
     """
-    i = np.arange(len(f))
-    f1 = np.sin(np.pi * 2 * n[0] * i + n[1])
+    i = ncp.arange(len(f))
+    f1 = ncp.sin(ncp.pi * 2 * n[0] * i + n[1])
     a = f - sum(f * f1) / sum(f1 * f1) * f1
     return sum(a * a)
 
@@ -7500,29 +7547,29 @@ def naff(f, ni=10, nran=3, verbose=0, figsize=(8, 5), rng=[0, 0.5]):
     nran: to avoid local min, try nran times random initial phase
     """
     fc = copy.deepcopy(f)
-    fc -= np.average(fc)
+    fc -= ncp.average(fc)
     if not any(fc):
         return [0.0], [0.0]
-    j = np.arange(len(fc))
+    j = ncp.arange(len(fc))
     nfnu, amp, phase = [], [], []
     for i in xrange(ni):
         nu0 = getTuneTbT(fc, verbose=0, hann=1, rng=rng)[0]
         nu1T, fcT, zzT, reT = [], [], [], []
         for jc in xrange(nran):
-            nu = [nu0, np.random.randn()]
+            nu = [nu0, ncp.random.randn()]
             nu1tmp = fmin(naffprod, nu, args=(fc,), xtol=1e-11, ftol=1e-12, disp=0)
-            f1 = np.sin(np.pi * 2 * nu1tmp[0] * j + nu1tmp[1])
+            f1 = ncp.sin(ncp.pi * 2 * nu1tmp[0] * j + nu1tmp[1])
             zztmp = sum(fc * f1) / sum(f1 * f1)
             fctmp = fc - zztmp * f1
             reT.append(naffprod(nu1tmp, fc))
             nu1T.append(nu1tmp)
             fcT.append(fctmp)
             zzT.append(zztmp)
-        indexmin = np.argmin(reT)
+        indexmin = ncp.argmin(reT)
         fc = fcT[indexmin]
         nfnu.append(nu1T[indexmin][0])
         if zzT[indexmin] < 0:
-            phase.append(nu1T[indexmin][1] - np.pi)
+            phase.append(nu1T[indexmin][1] - ncp.pi)
         else:
             phase.append(nu1T[indexmin][1])
         amp.append(abs(zzT[indexmin]))
@@ -7533,8 +7580,8 @@ def naff(f, ni=10, nran=3, verbose=0, figsize=(8, 5), rng=[0, 0.5]):
                 % (i + 1, nfnu[i], amp[i], phase[i])
             )
         plt.figure(figsize=figsize)
-        plt.bar(nfnu, np.abs(amp), width=1e-4)
-        plt.axis([0, 0.5, 0, 1.05 * max(np.abs(amp))])
+        plt.bar(nfnu, ncp.abs(amp), width=1e-4)
+        plt.axis([0, 0.5, 0, 1.05 * max(ncp.abs(amp))])
         plt.show()
     return nfnu, amp, phase
 
@@ -7567,25 +7614,25 @@ def getPhaseTbT(
         if len(mu0):
             mu0 = mu0[cond]
         n = len(x)
-    mu = np.zeros(n)
-    quadrant = np.zeros(n, dtype=int)
+    mu = ncp.zeros(n)
+    quadrant = ncp.zeros(n, dtype=int)
     for ib, xb in enumerate(x):
         if not nu:
             nu = getTuneTbT(xb, rng=trng, hann=hann, ith=ith)[0]
         S, C = 0.0, 0.0
         twopinu = twopi * nu
         for i, xi in enumerate(xb):
-            S += xi * np.sin(i * twopinu)
-            C += xi * np.cos(i * twopinu)
-        phi = -np.arctan(S / C)
+            S += xi * ncp.sin(i * twopinu)
+            C += xi * ncp.cos(i * twopinu)
+        phi = -ncp.arctan(S / C)
         if S <= 0 and C < 0:
-            phi += np.pi  # --- 2nd quadrant
+            phi += ncp.pi  # --- 2nd quadrant
             qd = 2
         elif S > 0 and C < 0:
-            phi += np.pi  # --- 3rd quadrant
+            phi += ncp.pi  # --- 3rd quadrant
             qd = 3
         elif S > 0 and C > 0:
-            phi += 2 * np.pi  # --- 4th quadrant
+            phi += 2 * ncp.pi  # --- 4th quadrant
             qd = 4
         elif S < 0 and C >= 0:
             qd = 1  # --- 1st quadrant
@@ -7599,11 +7646,11 @@ def getPhaseTbT(
     mu = monoPhase(mu, quadrant, startFromZero=1)
     if verbose:
         phb = mu - (mu0 - mu0[0])
-        phbrms = np.sqrt(sum(phb**2) / n)
+        phbrms = ncp.sqrt(sum(phb**2) / n)
         plt.figure(figsize=figsize)
         if len(mu0):
-            plt.plot(cond, np.mod(mu0 - mu0[0], 1), "b-s", label="designed")
-        plt.plot(cond, np.mod(mu, 1), "g-o", label="measured")
+            plt.plot(cond, ncp.mod(mu0 - mu0[0], 1), "b-s", label="designed")
+        plt.plot(cond, ncp.mod(mu, 1), "g-o", label="measured")
         plt.annotate(
             r"$\Delta\phi_{rms}=%.1e\times2\pi$" % phbrms,
             xy=(0.5, 0.5),
@@ -7627,8 +7674,8 @@ def CSNormalization(betax, alfax, betay, alfay, combine=True):
     given Twiss, return normalization matrix
     if combine is true, return x-ip transfer matrix
     """
-    sqtbx = np.sqrt(betax)
-    sqtby = np.sqrt(betay)
+    sqtbx = ncp.sqrt(betax)
+    sqtby = ncp.sqrt(betay)
     m = np.mat(
         [
             [1 / sqtbx, 0, 0, 0],
@@ -7662,24 +7709,24 @@ def coefb0(bL, betax, phix, mux):
             [
                 -bL[i]
                 * bL[j]
-                * np.sqrt(betax[i] ** 3 * betax[j] ** 3)
-                * np.exp(-1j * phix[i] - 1j * phix[j])
-                * (np.exp(2j * phix[j]) + np.exp(2j * phix[i]))
-                * (np.exp(1j * mux + 2j * phix[j]) + np.exp(2j * phix[i]))
+                * ncp.sqrt(betax[i] ** 3 * betax[j] ** 3)
+                * ncp.exp(-1j * phix[i] - 1j * phix[j])
+                * (ncp.exp(2j * phix[j]) + ncp.exp(2j * phix[i]))
+                * (ncp.exp(1j * mux + 2j * phix[j]) + ncp.exp(2j * phix[i]))
                 for i in range(ns)
                 for j in range(ns)
                 if i > j
             ]
         )
         / 8.0
-        / (-1 + np.exp(1j * mux)) ** 2
-        / (1 + np.exp(1j * mux))
+        / (-1 + ncp.exp(1j * mux)) ** 2
+        / (1 + ncp.exp(1j * mux))
     )
 
     b03z322 = (
-        sum([-bL[i] ** 2 * betax[i] ** 3 * np.exp(2j * phix[i]) for i in range(ns)])
+        sum([-bL[i] ** 2 * betax[i] ** 3 * ncp.exp(2j * phix[i]) for i in range(ns)])
         / 8.0
-        / (-1 + np.exp(1j * mux)) ** 2
+        / (-1 + ncp.exp(1j * mux)) ** 2
     )
 
     b03z3 = b03z312 + b03z322
@@ -7690,12 +7737,12 @@ def coefb0(bL, betax, phix, mux):
             [
                 bL[i]
                 * bL[j]
-                * np.sqrt(betax[i] ** 3 * betax[j] ** 3)
+                * ncp.sqrt(betax[i] ** 3 * betax[j] ** 3)
                 * (
-                    np.exp(4j * mux - 1j * phix[j] - 3j * phix[i])
-                    * (-1 - np.exp(1j * mux) - np.exp(2j * mux) + np.exp(3j * mux))
-                    + np.exp(4j * mux - 3j * phix[j] - 1j * phix[i])
-                    * (1 - np.exp(1j * mux) - np.exp(2j * mux) - np.exp(3j * mux))
+                    ncp.exp(4j * mux - 1j * phix[j] - 3j * phix[i])
+                    * (-1 - ncp.exp(1j * mux) - ncp.exp(2j * mux) + ncp.exp(3j * mux))
+                    + ncp.exp(4j * mux - 3j * phix[j] - 1j * phix[i])
+                    * (1 - ncp.exp(1j * mux) - ncp.exp(2j * mux) - ncp.exp(3j * mux))
                 )
                 for i in range(ns)
                 for j in range(ns)
@@ -7703,24 +7750,24 @@ def coefb0(bL, betax, phix, mux):
             ]
         )
         / 8.0
-        / (1 - np.exp(3j * mux) - np.exp(4j * mux) + np.exp(7j * mux))
+        / (1 - ncp.exp(3j * mux) - ncp.exp(4j * mux) + ncp.exp(7j * mux))
     )
 
     b03zs322 = (
         sum(
             [
-                -bL[i] ** 2 * betax[i] ** 3 * np.exp(5j * mux - 4j * phix[i])
+                -bL[i] ** 2 * betax[i] ** 3 * ncp.exp(5j * mux - 4j * phix[i])
                 for i in range(ns)
             ]
         )
         / 8.0
-        / (-1 + np.exp(1j * mux)) ** 2
+        / (-1 + ncp.exp(1j * mux)) ** 2
         / (
             1
-            + np.exp(1j * mux)
-            + 2 * np.exp(2j * mux)
-            + np.exp(3j * mux)
-            + np.exp(4j * mux)
+            + ncp.exp(1j * mux)
+            + 2 * ncp.exp(2j * mux)
+            + ncp.exp(3j * mux)
+            + ncp.exp(4j * mux)
         )
     )
 
@@ -7732,15 +7779,15 @@ def coefb0(bL, betax, phix, mux):
             [
                 bL[i]
                 * bL[j]
-                * np.sqrt(betax[i] ** 3 * betax[j] ** 3)
+                * ncp.sqrt(betax[i] ** 3 * betax[j] ** 3)
                 * (
-                    -np.exp(2j * mux - 1j * phix[j] - 1j * phix[i])
-                    * (1 + np.exp(1j * mux))
-                    * (1 + np.exp(1j * mux) + np.exp(2j * mux))
-                    + np.exp(2j * mux - 3j * phix[j] + 1j * phix[i])
-                    * (3 + np.exp(1j * mux) + np.exp(2j * mux))
-                    + np.exp(3j * mux + 1j * phix[j] - 3j * phix[i])
-                    * (1 + np.exp(1j * mux) + 3 * np.exp(2j * mux))
+                    -ncp.exp(2j * mux - 1j * phix[j] - 1j * phix[i])
+                    * (1 + ncp.exp(1j * mux))
+                    * (1 + ncp.exp(1j * mux) + ncp.exp(2j * mux))
+                    + ncp.exp(2j * mux - 3j * phix[j] + 1j * phix[i])
+                    * (3 + ncp.exp(1j * mux) + ncp.exp(2j * mux))
+                    + ncp.exp(3j * mux + 1j * phix[j] - 3j * phix[i])
+                    * (1 + ncp.exp(1j * mux) + 3 * ncp.exp(2j * mux))
                 )
                 for i in range(ns)
                 for j in range(ns)
@@ -7748,19 +7795,19 @@ def coefb0(bL, betax, phix, mux):
             ]
         )
         / 8.0
-        / (1 - np.exp(2j * mux) - np.exp(3j * mux) + np.exp(5j * mux))
+        / (1 - ncp.exp(2j * mux) - ncp.exp(3j * mux) + ncp.exp(5j * mux))
     )
 
     b03zs2z22 = (
         sum(
             [
-                bL[i] ** 2 * betax[i] ** 3 * np.exp(2j * mux - 2j * phix[i])
+                bL[i] ** 2 * betax[i] ** 3 * ncp.exp(2j * mux - 2j * phix[i])
                 for i in range(ns)
             ]
         )
-        * (1 + np.exp(3j * mux))
+        * (1 + ncp.exp(3j * mux))
         / 8.0
-        / (1 - np.exp(2j * mux) - np.exp(3j * mux) + np.exp(5j * mux))
+        / (1 - ncp.exp(2j * mux) - ncp.exp(3j * mux) + ncp.exp(5j * mux))
     )
 
     b03zs2z = b03zs2z12 + b03zs2z22
@@ -7770,22 +7817,22 @@ def coefb0(bL, betax, phix, mux):
         1j
         * sum(
             [
-                bL[i] * np.sqrt(betax[i] ** 3) * np.exp(3j * mux - 3j * phix[i])
+                bL[i] * ncp.sqrt(betax[i] ** 3) * ncp.exp(3j * mux - 3j * phix[i])
                 for i in range(ns)
             ]
         )
         / 4.0
-        / (-1 + np.exp(3j * mux))
+        / (-1 + ncp.exp(3j * mux))
     )
 
     # term ~ hxp^2 in 2rd order terms of b0
     b02z2 = (
         -1j
         * sum(
-            [bL[i] * np.sqrt(betax[i] ** 3) * np.exp(1j * phix[i]) for i in range(ns)]
+            [bL[i] * ncp.sqrt(betax[i] ** 3) * ncp.exp(1j * phix[i]) for i in range(ns)]
         )
         / 4.0
-        / (-1 + np.exp(1j * mux))
+        / (-1 + ncp.exp(1j * mux))
     )
 
     # term ~ hxm*hxp in 2rd order terms of b0
@@ -7793,12 +7840,12 @@ def coefb0(bL, betax, phix, mux):
         -1j
         * sum(
             [
-                bL[i] * np.sqrt(betax[i] ** 3) * np.exp(1j * mux - 1j * phix[i])
+                bL[i] * ncp.sqrt(betax[i] ** 3) * ncp.exp(1j * mux - 1j * phix[i])
                 for i in range(ns)
             ]
         )
         / 2.0
-        / (1 - np.exp(1j * mux))
+        / (1 - ncp.exp(1j * mux))
     )
 
     return b02z2, b02zs2, b02zsz, b03z3, b03zs3, b03zs2z
@@ -7806,7 +7853,7 @@ def coefb0(bL, betax, phix, mux):
 
 def b0z(xbar, pbar, b02z2, b02zs2, b02zsz, b03z3, b03zs3, b03zs2z):
     z = xbar - 1j * pbar
-    zs = np.conj(z)
+    zs = ncp.conj(z)
     b01 = z
     b02 = b02z2 * z**2 + b02zs2 * zs**2 + b02zsz * z * zs
     b03 = b03z3 * z**3 + b03zs3 * zs**3 + b03zs2z * zs**2 * z
