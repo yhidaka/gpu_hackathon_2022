@@ -1,9 +1,15 @@
+import os
 import sys
 import time
+
+# Must set these before NumPy import to disable its multithreading
+os.environ["OPENBLAS_NUM_THREADS"] = "1"  # export OPENBLAS_NUM_THREADS=1
+os.environ["MKL_NUM_THREADS"] = "1"  # export MKL_NUM_THREADS=1
 
 import cupy as cp
 import h5py
 import numpy as np
+import nvtx
 
 import pylatt as latt
 
@@ -42,25 +48,30 @@ if __name__ == "__main__":
     else:
         latt.use_cpu()
 
-    quad = latt.quad("Q1", L=1, K1=0.5, nkick=20)
+    with nvtx.annotate("Quad creation", color="red"):
+        quad = latt.quad("Q1", L=1, K1=0.5, nkick=20)
 
-    ini_6d, correct_fin_6d = load_data_from_file()
+    with nvtx.annotate("Load data from file", color="blue"):
+        ini_6d, correct_fin_6d = load_data_from_file()
 
     if use_gpu:
-        ini_6d = to_gpu(ini_6d)
-        correct_fin_6d = to_gpu(correct_fin_6d)
+        with nvtx.annotate("Transfer data to GPU", color="yellow"):
+            ini_6d = to_gpu(ini_6d)
+            correct_fin_6d = to_gpu(correct_fin_6d)
 
     # decimal = 16
     decimal = 15
 
     for _ in range(5):
-        t0 = time.perf_counter()
-        output = quad.sympass4(ini_6d, fast=1)
-        print(f"Tracking took {time.perf_counter()-t0:.3f} [s]")
+        with nvtx.annotate("Tracking through the quad", color="red"):
+            t0 = time.perf_counter()
+            output = quad.sympass4(ini_6d, fast=1)
+            print(f"Tracking took {time.perf_counter()-t0:.3f} [s]")
 
-        if use_gpu:
-            cp.testing.assert_array_almost_equal(
-                output, correct_fin_6d, decimal=decimal
-            )
-        else:
-            np.testing.assert_almost_equal(output, correct_fin_6d, decimal=decimal)
+        with nvtx.annotate("Testing", color="green"):
+            if use_gpu:
+                cp.testing.assert_array_almost_equal(
+                    output, correct_fin_6d, decimal=decimal
+                )
+            else:
+                np.testing.assert_almost_equal(output, correct_fin_6d, decimal=decimal)
