@@ -27,6 +27,11 @@ from matplotlib.collections import PatchCollection
 import matplotlib.patches as mpatches
 import matplotlib.pylab as plt
 import numpy as np
+
+try:
+    import nvtx
+except:
+    print('*** Could NOT import "nvtx"')
 from scipy.linalg import logm
 import scipy.optimize as opt
 from scipy.optimize import fmin
@@ -334,21 +339,26 @@ class quad(drif):
                 x = rotmat(self.tilt).dot(x)
             S = 0.0
             for i in range(self.nkick):
-                x1p, y1p = x[1], x[3]
-                x = self._Ma.dot(x)
-                x[1] -= self._K1Lg * x[0] / (1.0 + x[5])
-                x[3] += self._K1Lg * x[2] / (1.0 + x[5])
-                x = self._Mb.dot(x)
-                x[1] -= self._K1Ld * x[0] / (1.0 + x[5])
-                x[3] += self._K1Ld * x[2] / (1.0 + x[5])
-                x = self._Mb.dot(x)
-                x[1] -= self._K1Lg * x[0] / (1.0 + x[5])
-                x[3] += self._K1Lg * x[2] / (1.0 + x[5])
-                x = self._Ma.dot(x)
-                x2p, y2p = x[1], x[3]
-                xp, yp = (x1p + x2p) / 2, (y1p + y2p) / 2
-                # --- average slope at entrance and exit
-                S += ncp.sqrt(1.0 + ncp.square(xp) + ncp.square(yp)) * self._dL
+                with nvtx.annotate("Ma1", color="blue"):
+                    x1p, y1p = x[1], x[3]
+                    x = self._Ma.dot(x)
+                    x[1] -= self._K1Lg * x[0] / (1.0 + x[5])
+                    x[3] += self._K1Lg * x[2] / (1.0 + x[5])
+                with nvtx.annotate("Mb1", color="green"):
+                    x = self._Mb.dot(x)
+                    x[1] -= self._K1Ld * x[0] / (1.0 + x[5])
+                    x[3] += self._K1Ld * x[2] / (1.0 + x[5])
+                with nvtx.annotate("Mb2", color="red"):
+                    x = self._Mb.dot(x)
+                    x[1] -= self._K1Lg * x[0] / (1.0 + x[5])
+                    x[3] += self._K1Lg * x[2] / (1.0 + x[5])
+                with nvtx.annotate("Ma2", color="yellow"):
+                    x = self._Ma.dot(x)
+                    x2p, y2p = x[1], x[3]
+                    xp, yp = (x1p + x2p) / 2, (y1p + y2p) / 2
+                with nvtx.annotate("avg", color="magenta"):
+                    # --- average slope at entrance and exit
+                    S += ncp.sqrt(1.0 + ncp.square(xp) + ncp.square(yp)) * self._dL
             if self.tilt != 0:
                 x = rotmat(-self.tilt).dot(x)
             if self.Dy != 0:
@@ -2540,8 +2550,10 @@ class beamline(object):
         x = ncp.zeros((se - sb + 1, x0.shape[0], x0.shape[1]))
         x[0] = x0
         for i in range(sb, se):
-            x0 = self.bl[i].sympass4(x0)
-            x[i - sb + 1] = x0
+            with nvtx.annotate(f"{self.bl[i].name} sympass4", color="red"):
+                x0 = self.bl[i].sympass4(x0)
+            with nvtx.annotate("copying", color="green"):
+                x[i - sb + 1] = x0
         return x
 
     def getTransMat(self, startIndex=0, endIndex=None):
@@ -5876,28 +5888,41 @@ class cell(beamline):
         """
         find dynamic aperture symplectic kick-drift
         """
-        x = ncp.linspace(xmin, xmax, int(nx))
-        y = ncp.linspace(ymin, ymax, int(ny))
-        xgrid, ygrid = ncp.meshgrid(x, y)
-        xin = ncp.zeros((7, nx * ny))
-        xin[-1] = ncp.arange(nx * ny)
-        xin[0] = xgrid.flatten()
-        xin[2] = ygrid.flatten()
-        xin[5] = dp
-        tbt = ncp.zeros((nturn, 6, nx * ny))
+        with nvtx.annotate("finddyapsym4 init", color="yellow"):
+            x = ncp.linspace(xmin, xmax, int(nx))
+            y = ncp.linspace(ymin, ymax, int(ny))
+            xgrid, ygrid = ncp.meshgrid(x, y)
+            xin = ncp.zeros((7, nx * ny))
+            xin[-1] = ncp.arange(nx * ny)
+            xin[0] = xgrid.flatten()
+            xin[2] = ygrid.flatten()
+            xin[5] = dp
+            tbt = ncp.zeros((nturn, 6, nx * ny))
+
         for i in range(nturn):
-            xin[:6] = self.eletrack(xin[:6])[-1]
-            tbt[i] = ncp.array(xin[:6])
+            with nvtx.annotate(f"T#{i+1} eletrack", color="red"):
+                xin[:6] = self.eletrack(xin[:6])[-1]
+            with nvtx.annotate(f"T#{i+1} tbt saving", color="green"):
+                tbt[i] = ncp.array(xin[:6])
             if verbose:
                 sys.stdout.write(
                     "\r--- tracking: %04i out of %04i is being done (%3i%%) ---"
                     % (i + 1, nturn, (i + 1) * 100.0 / nturn)
                 )
                 sys.stdout.flush()
-        xin[6] = chkap(xin)
-        dyap = xin[6]
-        dyap = dyap.reshape(xgrid.shape)
-        self.dyap = {"xgrid": xgrid, "ygrid": ygrid, "dyap": dyap, "dp": dp, "tbt": tbt}
+
+        with nvtx.annotate("finddyapsym4 fin", color="blue"):
+            xin[6] = chkap(xin)
+            dyap = xin[6]
+            dyap = dyap.reshape(xgrid.shape)
+            self.dyap = {
+                "xgrid": xgrid,
+                "ygrid": ygrid,
+                "dyap": dyap,
+                "dp": dp,
+                "tbt": tbt,
+            }
+
         # --- if diffusion
         if dfu:
             if tunewindow:
