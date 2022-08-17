@@ -18,6 +18,7 @@ import pylatt as latt
 if __name__ == "__main__":
 
     show_plots = False
+    run_2nd_DA = False
 
     if sys.argv[1] == "gpu":
         use_gpu = True
@@ -52,27 +53,28 @@ if __name__ == "__main__":
     if show_plots:
         acell.ring.pltdyap()
 
-    sh1 = acell.ring.getElements("sext", "sh1", unique=True)[0]
-    sh1.K2 = 12
+    if run_2nd_DA:
+        sh1 = acell.ring.getElements("sext", "sh1", unique=True)[0]
+        sh1.K2 = 12
 
-    with nvtx.annotate("Second DA", color="red"):
-        t0 = time.perf_counter()
-        acell.ring.finddyapsym4(
-            xmin=-0.05,
-            xmax=0.04,
-            ymin=1e-6,
-            ymax=0.02,
-            nx=31,
-            ny=11,
-            dp=0,
-            nturn=256,
-            dfu=False,
-            naf=False,
-        )
-        print(f"DA took {time.perf_counter()-t0:.6f}")
+        with nvtx.annotate("Second DA", color="red"):
+            t0 = time.perf_counter()
+            acell.ring.finddyapsym4(
+                xmin=-0.05,
+                xmax=0.04,
+                ymin=1e-6,
+                ymax=0.02,
+                nx=31,
+                ny=11,
+                dp=0,
+                nturn=256,
+                dfu=False,
+                naf=False,
+            )
+            print(f"DA took {time.perf_counter()-t0:.6f}")
 
-    if show_plots:
-        acell.ring.pltdyap()
+        if show_plots:
+            acell.ring.pltdyap()
 
     if show_plots:
         pp = PdfPages(".".join(__file__.split(".")[:-1] + ["pdf"]))
