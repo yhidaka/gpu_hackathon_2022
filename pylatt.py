@@ -2054,7 +2054,8 @@ class beamline(object):
             ncp.float64,
         ).reshape(3, 1)
         self._dxy = ncp.array(
-            [self.etax0, self.etaxp0, self.etay0, self.etayp0, 1], ncp.float64
+            [self.etax0, self.etaxp0, self.etay0, self.etayp0, ncp.array(1.0)],
+            ncp.float64,
         ).reshape(-1, 1)
         for elem in self.bl:
             mx = elem.tm[0:2, 0:2]
@@ -2063,17 +2064,23 @@ class beamline(object):
                 neglen = True
             else:
                 neglen = False
-            self._mux = np.append(
-                self.mux, self.mux[-1] + phasetrans(mx, self._twx[:, -1], neglen=neglen)
+            self._mux = ncp.hstack(
+                (
+                    self.mux,
+                    self.mux[-1] + phasetrans(mx, self._twx[:, -1], neglen=neglen),
+                )
             )
-            self._muy = np.append(
-                self.muy, self.muy[-1] + phasetrans(my, self._twy[:, -1], neglen=neglen)
+            self._muy = ncp.hstack(
+                (
+                    self.muy,
+                    self.muy[-1] + phasetrans(my, self._twy[:, -1], neglen=neglen),
+                )
             )
-            self._twx = np.append(
-                self._twx, twisstrans(elem.tx, self._twx[:, -1]).reshape(3, 1), axis=1
+            self._twx = ncp.hstack(
+                (self._twx, twisstrans(elem.tx, self._twx[:, -1]).reshape(3, 1))
             )
-            self._twy = np.append(
-                self._twy, twisstrans(elem.ty, self._twy[:, -1]).reshape(3, 1), axis=1
+            self._twy = ncp.hstack(
+                (self._twy, twisstrans(elem.ty, self._twy[:, -1]).reshape(3, 1))
             )
         self._betax = self._twx[0]
         self._betay = self._twy[0]
@@ -2092,9 +2099,7 @@ class beamline(object):
             m = ncp.take(
                 ncp.take(elem.tm, [0, 1, 2, 3, 5], axis=0), [0, 1, 2, 3, 5], axis=1
             )
-            self._dxy = np.append(
-                self._dxy, m.dot(self._dxy[:, -1]).reshape(-1, 1), axis=1
-            )
+            self._dxy = np.hstack((self._dxy, m.dot(self._dxy[:, -1]).reshape(-1, 1)))
         self._etax = self._dxy[0]
         self._etaxp = self._dxy[1]
         self._etay = self._dxy[2]

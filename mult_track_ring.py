@@ -17,6 +17,8 @@ import pylatt as latt
 
 if __name__ == "__main__":
 
+    show_plots = False
+
     if sys.argv[1] == "gpu":
         use_gpu = True
     elif sys.argv[1] == "cpu":
@@ -47,7 +49,8 @@ if __name__ == "__main__":
         )
         print(f"DA took {time.perf_counter()-t0:.6f}")
 
-    acell.ring.pltdyap()
+    if show_plots:
+        acell.ring.pltdyap()
 
     sh1 = acell.ring.getElements("sext", "sh1", unique=True)[0]
     sh1.K2 = 12
@@ -68,11 +71,11 @@ if __name__ == "__main__":
         )
         print(f"DA took {time.perf_counter()-t0:.6f}")
 
-    acell.ring.pltdyap()
+    if show_plots:
+        acell.ring.pltdyap()
 
-    pp = PdfPages(".".join(__file__.split(".")[:-1] + ["pdf"]))
-    for fignum in plt.get_fignums():
-        pp.savefig(figure=fignum)
-    pp.close()
-
-    # plt.show()
+    if show_plots:
+        pp = PdfPages(".".join(__file__.split(".")[:-1] + ["pdf"]))
+        for fignum in plt.get_fignums():
+            pp.savefig(figure=fignum)
+        pp.close()
