@@ -628,7 +628,7 @@ class kick(drif):
             x = ncp.dot(rotmat(self.tilt), x)
         if self.L != 0:
             S = 0
-            for i in xrange(self.nkick):
+            for i in range(self.nkick):
                 x1p, y1p = x[1], x[3]
                 x = self._Ma.dot(x)
                 x[1] += self._KhLg / (1.0 + x[5])
@@ -1237,7 +1237,7 @@ class kmap(drif):
         x[0] += x[1] * dl
         x[2] += x[3] * dl
         S += ncp.sqrt(1.0 + ncp.square(x[1]) + ncp.square(x[3])) * dl
-        for m in xrange(self.nkick):
+        for m in range(self.nkick):
             if self._kmap1:
                 kx = interp2d(
                     self._kmap1["x"], self._kmap1["y"], self._kmap1["kx"], x[0], x[2]
@@ -2483,7 +2483,7 @@ class beamline(object):
         n = self.getIndex(["sext", "octu"])
         # --- 0 -> 1
         if n[0] > 0:
-            tmlist = [self.bl[j].tm for j in xrange(n[0])][::-1]
+            tmlist = [self.bl[j].tm for j in range(n[0])][::-1]
             alist.append(
                 matr(
                     "M%04i" % imat, L=self.s[n[0]], tm=functools.reduce(ncp.dot, tmlist)
@@ -2493,7 +2493,7 @@ class beamline(object):
         alist.append(self.bl[n[0]])
         # --- n
         for i, ni in enumerate(n[:-1]):
-            tmlist = [self.bl[j].tm for j in xrange(ni + 1, n[i + 1])][::-1]
+            tmlist = [self.bl[j].tm for j in range(ni + 1, n[i + 1])][::-1]
             alist.append(
                 matr(
                     "M%04i" % imat,
@@ -2505,7 +2505,7 @@ class beamline(object):
             alist.append(self.bl[n[i + 1]])
         # --- n -> end
         if n[-1] < len(self.bl) - 1:
-            tmlist = [self.bl[j].tm for j in xrange(n[-1] + 1, len(self.bl))][::-1]
+            tmlist = [self.bl[j].tm for j in range(n[-1] + 1, len(self.bl))][::-1]
             alist.append(
                 matr(
                     "M%04i" % imat,
@@ -2534,7 +2534,7 @@ class beamline(object):
             se = len(self.bl)
         x = ncp.zeros((se - sb + 1, x0.shape[0], x0.shape[1]))
         x[0] = x0
-        for i in xrange(sb, se):
+        for i in range(sb, se):
             x0 = self.bl[i].sympass4(x0)
             x[i - sb + 1] = x0
         return x
@@ -3242,7 +3242,7 @@ class cell(beamline):
         xin[2] = nde * [amp]
         xin[5] = dE
         tbt = ncp.zeros((nturn, 6, nde))
-        for i in xrange(nturn):
+        for i in range(nturn):
             xin = self.eletrack(xin)[-1]
             tbt[i] = xin
             sys.stdout.write(
@@ -3266,7 +3266,7 @@ class cell(beamline):
             csm = CSNormalization(
                 self.betax[0], self.alfax[0], self.betay[0], self.alfay[0], combine=True
             )
-        for i in xrange(nde):
+        for i in range(nde):
             if crossHalfInt:
                 a0 = ncp.array(csm * tbt[:, :4, i].transpose())
                 xpw0 = ncp.fft.fft(a0[0])
@@ -5880,7 +5880,7 @@ class cell(beamline):
         xin[2] = ygrid.flatten()
         xin[5] = dp
         tbt = ncp.zeros((nturn, 6, nx * ny))
-        for i in xrange(nturn):
+        for i in range(nturn):
             xin[:6] = self.eletrack(xin[:6])[-1]
             tbt[i] = ncp.array(xin[:6])
             if verbose:
@@ -5908,7 +5908,7 @@ class cell(beamline):
                 rngx, rngy = [0.0, 0.5], [0.0, 0.5]
             fmx, fmy = ncp.zeros(nx * ny), ncp.zeros(nx * ny)
             df1 = ncp.zeros(nx * ny)
-            for i in xrange(nx * ny):
+            for i in range(nx * ny):
                 if verbose:
                     sys.stdout.write(
                         "\r--- diffusion: %04i out of %04i is being done (%3i%%) ---"
@@ -6038,7 +6038,7 @@ class cell(beamline):
             cs = np.mat([[1,-1j,0,0],[0,0,1,-1j]])
             """
             n = self.dyap["tbt"].shape[2]
-            for i in xrange(n):
+            for i in range(n):
                 a0 = ncp.array(cs * self.dyap["tbt"][:, :4, i].transpose())
                 xpw0 = ncp.fft.fft(a0[0])
                 self.dyap["fma"][i, 0] = pickPeak(ncp.abs(xpw0), rng=[0, 1])[0]
@@ -6085,7 +6085,7 @@ class cell(beamline):
         else:
             plt.figure(figsize=figsize)
             n1, n2, n3 = self.dyap["tbt"].shape
-            for i in xrange(0, n3, densityGap):
+            for i in range(0, n3, densityGap):
                 if any(ncp.isnan(self.dyap["tbt"][:, 0, i])) or any(
                     ncp.isnan(self.dyap["tbt"][:, 2, i])
                 ):
@@ -6130,7 +6130,7 @@ class cell(beamline):
             xin[2] = dA
             xin[0] = nA * [sA]
         tbt = ncp.zeros((nturn, 6, nA))
-        for i in xrange(nturn):
+        for i in range(nturn):
             xin[:6] = self.eletrack(xin[:6])[-1]
             tbt[i] = ncp.array(xin[:6])
             sys.stdout.write(
@@ -6164,7 +6164,7 @@ class cell(beamline):
             cs = np.mat([[1,-1j,0,0],[0,0,1,-1j]])
             csm = cs*m
             """
-        for i in xrange(nA):
+        for i in range(nA):
             if crossHalfInt:
                 a0 = ncp.array(csm * tbt[:, :4, i].transpose())
                 xpw0 = ncp.fft.fft(a0[0])
@@ -6233,7 +6233,7 @@ class cell(beamline):
         xin[0] = dAx
         xin[2] = dAy
         tbt = ncp.zeros((nturn, 6, nA))
-        for i in xrange(nturn):
+        for i in range(nturn):
             xin[:6] = self.eletrack(xin[:6])[-1]
             tbt[i] = ncp.array(xin[:6])
             sys.stdout.write(
@@ -6267,7 +6267,7 @@ class cell(beamline):
             cs = np.mat([[1,-1j,0,0],[0,0,1,-1j]])
             csm = cs*m
             """
-        for i in xrange(nA):
+        for i in range(nA):
             if crossHalfInt:
                 a0 = ncp.array(csm * tbt[:, :4, i].transpose())
                 xpw0 = ncp.fft.fft(a0[0])
@@ -6338,7 +6338,7 @@ class cell(beamline):
         xin[2] = ncp.ones(nx * nd) * sA
         xin[5] = ygrid.flatten()
         tbt = ncp.zeros((nturn, 6, nx * nd))
-        for i in xrange(nturn):
+        for i in range(nturn):
             xin[:6] = self.eletrack(xin[:6])[-1]
             tbt[i] = ncp.array(xin[:6])
             if verbose:
@@ -6365,7 +6365,7 @@ class cell(beamline):
                 ]
             else:
                 rngx, rngy = [0.0, 0.5], [0.0, 0.5]
-            for i in xrange(nx * nd):
+            for i in range(nx * nd):
                 if verbose:
                     sys.stdout.write(
                         "\r--- diffusion: %04i out of %04i is being done (%3i%%) ---"
@@ -6980,7 +6980,7 @@ def madParse(a, upper=True):
         while "-" in b:
             print("attention: beamline flip over\n")
             i = b.index("-")
-            for j in xrange(i + 1, len(b)):
+            for j in range(i + 1, len(b)):
                 if b[j] == "," or b[j] == "]":
                     repl = b[i + 1 : j] + "[::+1]"
                     break
@@ -7179,7 +7179,7 @@ def symJ(nvar=4):
     """
     # J = np.mat(ncp.zeros((nvar, nvar)))
     J = ncp.zeros((nvar, nvar))
-    for i in xrange(int(nvar / 2)):
+    for i in range(int(nvar / 2)):
         J[2 * i, 2 * i + 1] = 1.0
         J[2 * i + 1, 2 * i] = -1.0
     return J
@@ -7552,10 +7552,10 @@ def naff(f, ni=10, nran=3, verbose=0, figsize=(8, 5), rng=[0, 0.5]):
         return [0.0], [0.0]
     j = ncp.arange(len(fc))
     nfnu, amp, phase = [], [], []
-    for i in xrange(ni):
+    for i in range(ni):
         nu0 = getTuneTbT(fc, verbose=0, hann=1, rng=rng)[0]
         nu1T, fcT, zzT, reT = [], [], [], []
-        for jc in xrange(nran):
+        for jc in range(nran):
             nu = [nu0, ncp.random.randn()]
             nu1tmp = fmin(naffprod, nu, args=(fc,), xtol=1e-11, ftol=1e-12, disp=0)
             f1 = ncp.sin(ncp.pi * 2 * nu1tmp[0] * j + nu1tmp[1])
@@ -7574,7 +7574,7 @@ def naff(f, ni=10, nran=3, verbose=0, figsize=(8, 5), rng=[0, 0.5]):
             phase.append(nu1T[indexmin][1])
         amp.append(abs(zzT[indexmin]))
     if verbose:
-        for i in xrange(ni):
+        for i in range(ni):
             print(
                 "i=%02i: nu=%10.4f, amp=%12.4e, phi=%12.4e"
                 % (i + 1, nfnu[i], amp[i], phase[i])
