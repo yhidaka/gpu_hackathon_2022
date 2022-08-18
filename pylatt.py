@@ -5992,6 +5992,16 @@ class cell(beamline):
         plot dynamic aperture
         """
         if self.dyap:
+
+            dyap = {}
+            _key_list = ["xgrid", "ygrid", "dp", "dyap"]
+            if hasattr(ncp, "asnumpy"):
+                for k in _key_list:
+                    dyap[k] = cp.asnumpy(self.dyap[k])
+            else:
+                for k in _key_list:
+                    dyap[k] = self.dyap[k]
+
             unit = 1
             if xyunit == "mm":
                 unit = 1e3
@@ -6001,35 +6011,43 @@ class cell(beamline):
                 print("undefined unit: '%d'" % xyunit)
             plt.figure(figsize=figsize)
             plt.contourf(
-                self.dyap["xgrid"] * unit,
-                self.dyap["ygrid"] * unit,
-                self.dyap["dyap"],
+                dyap["xgrid"] * unit,
+                dyap["ygrid"] * unit,
+                dyap["dyap"],
                 1,
             )
             plt.xlabel("x[%s]" % xyunit)
             plt.ylabel("y[%s]" % xyunit)
-            plt.title("Dynamic aperture for dp/p = %.2f" % self.dyap["dp"])
+            plt.title("Dynamic aperture for dp/p = %.2f" % dyap["dp"])
             if fn:
                 plt.savefig(fn)
                 plt.close()
             else:
                 plt.show()
-            if "dfu" in self.dyap.keys():
+            if "dfu" in self.dyap:
+                _key_list = ["dfu"]
+                if hasattr(ncp, "asnumpy"):
+                    for k in _key_list:
+                        dyap[k] = cp.asnumpy(self.dyap[k])
+                else:
+                    for k in _key_list:
+                        dyap[k] = self.dyap[k]
+
                 plt.figure(figsize=figsize)
                 maskeddfu = np.ma.array(
-                    self.dyap["dfu"], mask=ncp.isnan(self.dyap["dfu"])
+                    dyap["dfu"], mask=np.isnan(dyap["dfu"])  # must use "np", not "ncp"
                 )
                 if mode == "contourf":
                     df = plt.contourf(
-                        self.dyap["xgrid"] * unit, self.dyap["ygrid"] * unit, maskeddfu
+                        dyap["xgrid"] * unit, dyap["ygrid"] * unit, maskeddfu
                     )
                 else:
                     df = plt.pcolor(
-                        self.dyap["xgrid"] * unit, self.dyap["ygrid"] * unit, maskeddfu
+                        dyap["xgrid"] * unit, dyap["ygrid"] * unit, maskeddfu
                     )
                 plt.xlabel("x [%s]" % xyunit)
                 plt.ylabel("y [%s]" % xyunit)
-                plt.title("Dynamic aperture for dp/p = %.2f" % self.dyap["dp"])
+                plt.title("Dynamic aperture for dp/p = %.2f" % dyap["dp"])
                 cb = plt.colorbar(df)
                 cb.ax.set_ylabel(r"$log_{10}\sqrt{\Delta\nu_x^2+\Delta\nu_y^2}$")
                 if fndfu:
