@@ -1006,35 +1006,40 @@ class sext(drif):
                 x = ncp.dot(rotmat(self.tilt), x)
             S = 0.0
             for i in range(self.nkick):
-                x1p, y1p = x[1], x[3]
-                x = ncp.dot(self._Ma, x)
-                x[1] -= (
-                    self._K2Lg
-                    / 2
-                    * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
-                    / (1.0 + x[5])
-                )
-                x[3] += self._K2Lg * (ncp.multiply(x[0], x[2])) / (1.0 + x[5])
-                x = ncp.dot(self._Mb, x)
-                x[1] -= (
-                    self._K2Ld
-                    / 2
-                    * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
-                    / (1.0 + x[5])
-                )
-                x[3] += self._K2Ld * (ncp.multiply(x[0], x[2])) / (1.0 + x[5])
-                x = ncp.dot(self._Mb, x)
-                x[1] -= (
-                    self._K2Lg
-                    / 2
-                    * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
-                    / (1.0 + x[5])
-                )
-                x[3] += self._K2Lg * (ncp.multiply(x[0], x[2])) / (1.0 + x[5])
-                x = ncp.dot(self._Ma, x)
-                x2p, y2p = x[1], x[3]
-                xp, yp = (x1p + x2p) / 2, (y1p + y2p) / 2
-                S += ncp.sqrt(1.0 + ncp.square(xp) + ncp.square(yp)) * self._dL
+                with nvtx.annotate("Ma1", color="blue"):
+                    x1p, y1p = x[1], x[3]
+                    x = ncp.dot(self._Ma, x)
+                    x[1] -= (
+                        self._K2Lg
+                        / 2
+                        * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
+                        / (1.0 + x[5])
+                    )
+                    x[3] += self._K2Lg * (ncp.multiply(x[0], x[2])) / (1.0 + x[5])
+                with nvtx.annotate("Mb1", color="green"):
+                    x = ncp.dot(self._Mb, x)
+                    x[1] -= (
+                        self._K2Ld
+                        / 2
+                        * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
+                        / (1.0 + x[5])
+                    )
+                    x[3] += self._K2Ld * (ncp.multiply(x[0], x[2])) / (1.0 + x[5])
+                with nvtx.annotate("Mb2", color="red"):
+                    x = ncp.dot(self._Mb, x)
+                    x[1] -= (
+                        self._K2Lg
+                        / 2
+                        * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
+                        / (1.0 + x[5])
+                    )
+                    x[3] += self._K2Lg * (ncp.multiply(x[0], x[2])) / (1.0 + x[5])
+                with nvtx.annotate("Ma2", color="yellow"):
+                    x = ncp.dot(self._Ma, x)
+                    x2p, y2p = x[1], x[3]
+                    xp, yp = (x1p + x2p) / 2, (y1p + y2p) / 2
+                with nvtx.annotate("avg", color="magenta"):
+                    S += ncp.sqrt(1.0 + ncp.square(xp) + ncp.square(yp)) * self._dL
             if self.tilt != 0:
                 x = ncp.dot(rotmat(-self.tilt), x)
             if self.Dy != 0:
