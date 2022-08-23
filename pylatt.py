@@ -2535,7 +2535,7 @@ class beamline(object):
             )
         return alist
 
-    def eletrack(self, x0, startIndex=0, endIndex=None, fast=0):
+    def eletrack(self, x0, startIndex=0, endIndex=None, fast=0, only_fin_coord=False):
         """
         element by element track
         x0: 6d initial condition
@@ -2552,14 +2552,20 @@ class beamline(object):
             se = endIndex
         else:
             se = len(self.bl)
-        x = ncp.zeros((se - sb + 1, x0.shape[0], x0.shape[1]))
-        x[0] = x0
+        if not only_fin_coord:
+            x = ncp.zeros((se - sb + 1, x0.shape[0], x0.shape[1]))
+            x[0] = x0
         for i in range(sb, se):
             with nvtx.annotate(f"{self.bl[i].name} sympass4", color="red"):
                 x0 = self.bl[i].sympass4(x0)
-            with nvtx.annotate("copying", color="green"):
-                x[i - sb + 1] = x0
-        return x
+            if not only_fin_coord:
+                with nvtx.annotate("copying", color="green"):
+                    x[i - sb + 1] = x0
+
+        if only_fin_coord:
+            return x0
+        else:
+            return x
 
     def getTransMat(self, startIndex=0, endIndex=None):
         """
@@ -5914,7 +5920,7 @@ class cell(beamline):
 
         for i in range(nturn):
             with nvtx.annotate(f"T#{i+1} eletrack", color="red"):
-                xin[:6] = self.eletrack(xin[:6])[-1]
+                xin[:6] = self.eletrack(xin[:6], fast=1, only_fin_coord=True)
             if savetbt:
                 with nvtx.annotate(f"T#{i+1} tbt saving", color="green"):
                     tbt[i] = ncp.array(xin[:6])
