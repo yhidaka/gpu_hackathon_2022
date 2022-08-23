@@ -930,6 +930,7 @@ class sext(drif):
         self.name = str(name)
         self._L = ncp.float64(L)
         self._K2 = ncp.float64(K2)
+        self._K2_array = None
         self._nkick = int(nkick)
         self._Dx = ncp.float64(Dx)
         self._Dy = ncp.float64(Dy)
@@ -957,6 +958,18 @@ class sext(drif):
         except:
             raise RuntimeError("K2 must be float (or convertible)")
 
+    @property
+    def K2_array(self):
+        return self._K2_array
+
+    @K2_array.setter
+    def K2_array(self, array):
+        try:
+            self._K2_array = ncp.array(array)
+            self._update()
+        except:
+            raise RuntimeError("K2_array must be an array of float (or convertible)")
+
     def _update(self):
         """
         update transport (M) and Twiss (Nx,y) matrices with current
@@ -969,12 +982,6 @@ class sext(drif):
         """
         set symplectic pass
         """
-        if self.K2 == 0 or self.L == 0:
-            attrlist = ["_dL", "_Ma", "_Mb", "_K2Lg", "_K2Ld"]
-            for al in attrlist:
-                if hasattr(self, al):
-                    delattr(self, al)
-            return
         a = 0.675603595979828664
         b = -0.175603595979828664
         g = 1.351207191959657328
@@ -986,8 +993,30 @@ class sext(drif):
         self._Mb = ncp.eye(6)
         self._Mb[0, 1] = b * self._dL
         self._Mb[2, 3] = self._Mb[0, 1]
-        self._K2Lg = g * self.K2 * self._dL
-        self._K2Ld = d * self.K2 * self._dL
+
+        if self.K2_array is None:
+            if self.K2 == 0 or self.L == 0:
+                attrlist = ["_dL", "_Ma", "_Mb", "_K2Lg", "_K2Ld"]
+                for al in attrlist:
+                    if hasattr(self, al):
+                        delattr(self, al)
+                return
+            self._K2Lg = g * self.K2 * self._dL
+            self._K2Ld = d * self.K2 * self._dL
+        else:
+            if ncp.all(self.K2_array == 0) or self.L == 0:
+                attrlist = ["_dL", "_Ma", "_Mb", "_K2Lg", "_K2Ld"]
+                for al in attrlist:
+                    if hasattr(self, al):
+                        delattr(self, al)
+                return
+            self._K2Lg = g * self.K2_array * self._dL
+            self._K2Ld = d * self.K2_array * self._dL
+
+            self._nLattices = len(self.K2_array)
+            self._K2Lg_array = None
+            self._K2Ld_array = None
+            self._K2L_nLat_nPart = None
 
     def sympass4(self, x, fast=1):
         """
@@ -1004,36 +1033,51 @@ class sext(drif):
                 x[2] -= self.Dy
             if self.tilt != 0:
                 x = ncp.dot(rotmat(self.tilt), x)
+
+            if isinstance(self._K2Lg, ncp.float64):  # Single Lattice
+                K2Lg = self._K2Lg
+                K2Ld = self._K2Ld
+            else:  # Multiple Lattices
+                nAllPart = x.shape[1]
+                nLat = self._nLattices
+                nParticles = nAllPart // nLat
+                if self._K2L_nLat_nPart != (nLat, nParticles):
+                    self._K2Lg_array = ncp.repeat(self._K2Lg, nParticles)
+                    self._K2Ld_array = ncp.repeat(self._K2Ld, nParticles)
+                    self._K2L_nLat_nPart = (nLat, nParticles)
+                K2Lg = self._K2Lg_array
+                K2Ld = self._K2Ld_array
+
             S = 0.0
             for i in range(self.nkick):
                 with nvtx.annotate("Ma1", color="blue"):
                     x1p, y1p = x[1], x[3]
                     x = ncp.dot(self._Ma, x)
                     x[1] -= (
-                        self._K2Lg
+                        K2Lg
                         / 2
                         * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
                         / (1.0 + x[5])
                     )
-                    x[3] += self._K2Lg * (ncp.multiply(x[0], x[2])) / (1.0 + x[5])
+                    x[3] += K2Lg * (ncp.multiply(x[0], x[2])) / (1.0 + x[5])
                 with nvtx.annotate("Mb1", color="green"):
                     x = ncp.dot(self._Mb, x)
                     x[1] -= (
-                        self._K2Ld
+                        K2Ld
                         / 2
                         * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
                         / (1.0 + x[5])
                     )
-                    x[3] += self._K2Ld * (ncp.multiply(x[0], x[2])) / (1.0 + x[5])
+                    x[3] += K2Ld * (ncp.multiply(x[0], x[2])) / (1.0 + x[5])
                 with nvtx.annotate("Mb2", color="red"):
                     x = ncp.dot(self._Mb, x)
                     x[1] -= (
-                        self._K2Lg
+                        K2Lg
                         / 2
                         * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
                         / (1.0 + x[5])
                     )
-                    x[3] += self._K2Lg * (ncp.multiply(x[0], x[2])) / (1.0 + x[5])
+                    x[3] += K2Lg * (ncp.multiply(x[0], x[2])) / (1.0 + x[5])
                 with nvtx.annotate("Ma2", color="yellow"):
                     x = ncp.dot(self._Ma, x)
                     x2p, y2p = x[1], x[3]
@@ -5895,6 +5939,7 @@ class cell(beamline):
         naf=True,
         tunewindow=0,
         savetbt=False,
+        save_fin_coords=False,
         verbose=0,
     ):
         """
@@ -5910,13 +5955,41 @@ class cell(beamline):
             x = ncp.linspace(xmin, xmax, int(nx))
             y = ncp.linspace(ymin, ymax, int(ny))
             xgrid, ygrid = ncp.meshgrid(x, y)
-            xin = ncp.zeros((7, nx * ny))
-            xin[-1] = ncp.arange(nx * ny)
-            xin[0] = xgrid.flatten()
-            xin[2] = ygrid.flatten()
-            xin[5] = dp
-            if savetbt:
-                tbt = ncp.zeros((nturn, 6, nx * ny))
+
+            nLattices_list = []
+            for elem in self.bl:
+                if isinstance(elem, sext):
+                    if elem.K2_array is not None:
+                        nLattices_list.append(len(elem.K2_array))
+
+            if nLattices_list == []:
+                self._mult_lat = False
+                nLattices = 1
+
+                xin = ncp.zeros((7, nx * ny))
+                xin[-1] = ncp.arange(nx * ny)
+                xin[0] = xgrid.flatten()
+                xin[2] = ygrid.flatten()
+                xin[5] = dp
+                if savetbt:
+                    tbt = ncp.zeros((nturn, 6, nx * ny))
+
+            else:
+                self._mult_lat = True
+                try:
+                    nLattices = np.unique(nLattices_list)
+                    assert len(nLattices) == 1
+                    nLattices = nLattices[0]
+                except AssertionError:
+                    raise AssertionError("Numbers of lattices must agree")
+
+                xin = ncp.zeros((7, nx * ny * nLattices))
+                xin[-1] = ncp.arange(nx * ny * nLattices)
+                xin[0] = ncp.tile(xgrid.flatten(), nLattices)
+                xin[2] = ncp.tile(ygrid.flatten(), nLattices)
+                xin[5] = dp
+                if savetbt:
+                    tbt = ncp.zeros((nturn, 6, nx * ny * nLattices))
 
         for i in range(nturn):
             with nvtx.annotate(f"T#{i+1} eletrack", color="red"):
@@ -5934,8 +6007,13 @@ class cell(beamline):
         with nvtx.annotate("finddyapsym4 fin", color="blue"):
             xin[6] = chkap(xin)
             dyap = xin[6]
-            dyap = dyap.reshape(xgrid.shape)
+            if nLattices == 1:
+                dyap = dyap.reshape(xgrid.shape)
+            else:
+                dyap = dyap.reshape([nLattices] + list(xgrid.shape))
             self.dyap = {"xgrid": xgrid, "ygrid": ygrid, "dyap": dyap, "dp": dp}
+            if save_fin_coords:
+                self.dyap["fin_coords"] = xin[:6]
             if savetbt:
                 self.dyap["tbt"] = tbt
 
