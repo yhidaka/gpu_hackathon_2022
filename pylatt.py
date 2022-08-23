@@ -5888,11 +5888,18 @@ class cell(beamline):
         dfu=True,
         naf=True,
         tunewindow=0,
+        savetbt=False,
         verbose=0,
     ):
         """
         find dynamic aperture symplectic kick-drift
+
+        if `dfu` is True, `savetbt` will be set to True automatically.
         """
+
+        if dfu:
+            savetbt = True
+
         with nvtx.annotate("finddyapsym4 init", color="yellow"):
             x = ncp.linspace(xmin, xmax, int(nx))
             y = ncp.linspace(ymin, ymax, int(ny))
@@ -5902,13 +5909,15 @@ class cell(beamline):
             xin[0] = xgrid.flatten()
             xin[2] = ygrid.flatten()
             xin[5] = dp
-            tbt = ncp.zeros((nturn, 6, nx * ny))
+            if savetbt:
+                tbt = ncp.zeros((nturn, 6, nx * ny))
 
         for i in range(nturn):
             with nvtx.annotate(f"T#{i+1} eletrack", color="red"):
                 xin[:6] = self.eletrack(xin[:6])[-1]
-            with nvtx.annotate(f"T#{i+1} tbt saving", color="green"):
-                tbt[i] = ncp.array(xin[:6])
+            if savetbt:
+                with nvtx.annotate(f"T#{i+1} tbt saving", color="green"):
+                    tbt[i] = ncp.array(xin[:6])
             if verbose:
                 sys.stdout.write(
                     "\r--- tracking: %04i out of %04i is being done (%3i%%) ---"
@@ -5920,13 +5929,9 @@ class cell(beamline):
             xin[6] = chkap(xin)
             dyap = xin[6]
             dyap = dyap.reshape(xgrid.shape)
-            self.dyap = {
-                "xgrid": xgrid,
-                "ygrid": ygrid,
-                "dyap": dyap,
-                "dp": dp,
-                "tbt": tbt,
-            }
+            self.dyap = {"xgrid": xgrid, "ygrid": ygrid, "dyap": dyap, "dp": dp}
+            if savetbt:
+                self.dyap["tbt"] = tbt
 
         # --- if diffusion
         if dfu:
