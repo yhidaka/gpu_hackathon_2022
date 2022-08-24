@@ -109,6 +109,19 @@ def plot():
 
     import matplotlib.pyplot as plt
 
+    # Manually entering Dean's CUDA code timing results
+    timing["cuda_c++"] = {
+        np.sqrt(40e6): 607,
+        2_000: 67,
+        1_000: 16,
+        500: 4,
+        200: 1,
+        100: 0.5,
+        50: 0.49,
+        20: 0.49,
+        10: 0.4,
+    }
+
     plt.figure()
     ns = np.sort(list(timing["cpu"]))
     n_squares = ns**2
@@ -118,6 +131,10 @@ def plot():
     n_squares = ns**2
     vals = np.array([timing["gpu"][k] for k in ns])
     plt.loglog(n_squares, np.mean(vals, axis=1), "b.-", label="GPU")
+    ns = np.sort(list(timing["cuda_c++"]))
+    n_squares = ns**2
+    vals = np.array([timing["cuda_c++"][k] for k in ns])
+    plt.loglog(n_squares, vals, "g.-", label="CUDA C++")
     plt.legend(loc="best")
     plt.xlabel(r"$\mathrm{Number\; of\; Particles}$", size="large")
     plt.ylabel(r"$\mathrm{Computation\; Time\; [s]}$", size="large")
