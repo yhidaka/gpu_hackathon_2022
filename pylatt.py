@@ -282,7 +282,7 @@ if nb_cuda is not None:
             cuda_calc_avg_slope(xp, yp, _dL, S)
 
     @nb_cuda.jit
-    def quad_sympass4_numba(x, K1Lg, K1Ld, Ma, Mb, nkick, dL, L, n, S):
+    def quad_sympass4_numba(x, K1Lg, K1Ld, Ma, Mb, nkick, dL, n, S):
         """Based on Jonathan Dursi's code"""
 
         idx = nb_cuda.grid(1)
@@ -318,6 +318,60 @@ if nb_cuda is not None:
 
                 x[1, idx] -= K1Lg * x[0, idx] / (1.0 + x[5, idx])
                 x[3, idx] += K1Lg * x[2, idx] / (1.0 + x[5, idx])
+
+                for dim in range(6):
+                    v = 0.0
+                    for k in range(6):
+                        v += x[dim, k] * Ma[k, idx]
+                    x[dim, idx] = v
+
+                x2p, y2p = x[1, idx], x[3, idx]
+                xp, yp = (x1p + x2p) / 2, (y1p + y2p) / 2
+
+                S[idx] += math.sqrt(1.0 + xp * xp + yp * yp) * dL
+
+    @nb_cuda.jit
+    def sext_sympass4_numba(x, K2Lg, K2Ld, Ma, Mb, nkick, dL, n, S):
+
+        idx = nb_cuda.grid(1)
+
+        if idx < n:
+            S[idx] = 0.0
+            for _ in range(nkick):
+                x1p, y1p = x[1, idx], x[3, idx]
+
+                for dim in range(6):
+                    v = 0.0
+                    for k in range(6):
+                        v += x[dim, k] * Ma[k, idx]
+                    x[dim, idx] = v
+
+                x[1, idx] -= (
+                    K2Lg / 2 * (x[0, idx] ** 2 - x[2, idx] ** 2) / (1.0 + x[5, idx])
+                )
+                x[3, idx] += K2Lg * (x[0, idx] * x[2, idx]) / (1.0 + x[5, idx])
+
+                for dim in range(6):
+                    v = 0.0
+                    for k in range(6):
+                        v += x[dim, k] * Mb[k, idx]
+                    x[dim, idx] = v
+
+                x[1, idx] -= (
+                    K2Ld / 2 * (x[0, idx] ** 2 - x[2, idx] ** 2) / (1.0 + x[5, idx])
+                )
+                x[3, idx] += K2Ld * (x[0, idx] * x[2, idx]) / (1.0 + x[5, idx])
+
+                for dim in range(6):
+                    v = 0
+                    for k in range(6):
+                        v += x[dim, k] * Mb[k, idx]
+                    x[dim, idx] = v
+
+                x[1, idx] -= (
+                    K2Lg / 2 * (x[0, idx] ** 2 - x[2, idx] ** 2) / (1.0 + x[5, idx])
+                )
+                x[3, idx] += K2Lg * (x[0, idx] * x[2, idx]) / (1.0 + x[5, idx])
 
                 for dim in range(6):
                     v = 0.0
@@ -726,7 +780,6 @@ class quad(drif):
                             self._Mb,
                             self.nkick,
                             self._dL,
-                            self.L,
                             n,
                             S,
                         )
@@ -1403,70 +1456,98 @@ class sext(drif):
         if self.K2 == 0 or self.L == 0:
             return super(sext, self).sympass4(x)
         else:
-            if self.Dx != 0:
-                x[0] -= self.Dx
-            if self.Dy != 0:
-                x[2] -= self.Dy
-            if self.tilt != 0:
-                x = ncp.dot(rotmat(self.tilt), x)
+            with nvtx.annotate("Global-to-Local", color="yellow"):
+                if self.Dx != 0:
+                    x[0] -= self.Dx
+                if self.Dy != 0:
+                    x[2] -= self.Dy
+                if self.tilt != 0:
+                    x = ncp.dot(rotmat(self.tilt), x)
 
-            if isinstance(self._K2Lg, ncp.float64):  # Single Lattice
-                K2Lg = self._K2Lg
-                K2Ld = self._K2Ld
-            else:  # Multiple Lattices
-                nAllPart = x.shape[1]
-                nLat = self._nLattices
-                nParticles = nAllPart // nLat
-                if self._K2L_nLat_nPart != (nLat, nParticles):
-                    self._K2Lg_array = ncp.repeat(self._K2Lg, nParticles)
-                    self._K2Ld_array = ncp.repeat(self._K2Ld, nParticles)
-                    self._K2L_nLat_nPart = (nLat, nParticles)
-                K2Lg = self._K2Lg_array
-                K2Ld = self._K2Ld_array
+            if nb_cuda is None:
 
-            S = 0.0
-            for i in range(self.nkick):
-                with nvtx.annotate("Ma1", color="blue"):
-                    x1p, y1p = x[1], x[3]
-                    x = ncp.dot(self._Ma, x)
-                    x[1] -= (
-                        K2Lg
-                        / 2
-                        * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
-                        / (1.0 + x[5])
+                if isinstance(self._K2Lg, ncp.float64):  # Single Lattice
+                    K2Lg = self._K2Lg
+                    K2Ld = self._K2Ld
+                else:  # Multiple Lattices
+                    nAllPart = x.shape[1]
+                    nLat = self._nLattices
+                    nParticles = nAllPart // nLat
+                    if self._K2L_nLat_nPart != (nLat, nParticles):
+                        self._K2Lg_array = ncp.repeat(self._K2Lg, nParticles)
+                        self._K2Ld_array = ncp.repeat(self._K2Ld, nParticles)
+                        self._K2L_nLat_nPart = (nLat, nParticles)
+                    K2Lg = self._K2Lg_array
+                    K2Ld = self._K2Ld_array
+
+                S = 0.0
+                for i in range(self.nkick):
+                    with nvtx.annotate("Ma1", color="blue"):
+                        x1p, y1p = x[1], x[3]
+                        x = ncp.dot(self._Ma, x)
+                        x[1] -= (
+                            K2Lg
+                            / 2
+                            * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
+                            / (1.0 + x[5])
+                        )
+                        x[3] += K2Lg * (ncp.multiply(x[0], x[2])) / (1.0 + x[5])
+                    with nvtx.annotate("Mb1", color="green"):
+                        x = ncp.dot(self._Mb, x)
+                        x[1] -= (
+                            K2Ld
+                            / 2
+                            * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
+                            / (1.0 + x[5])
+                        )
+                        x[3] += K2Ld * (ncp.multiply(x[0], x[2])) / (1.0 + x[5])
+                    with nvtx.annotate("Mb2", color="red"):
+                        x = ncp.dot(self._Mb, x)
+                        x[1] -= (
+                            K2Lg
+                            / 2
+                            * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
+                            / (1.0 + x[5])
+                        )
+                        x[3] += K2Lg * (ncp.multiply(x[0], x[2])) / (1.0 + x[5])
+                    with nvtx.annotate("Ma2", color="yellow"):
+                        x = ncp.dot(self._Ma, x)
+                        x2p, y2p = x[1], x[3]
+                        xp, yp = (x1p + x2p) / 2, (y1p + y2p) / 2
+                    with nvtx.annotate("avg", color="magenta"):
+                        S += ncp.sqrt(1.0 + ncp.square(xp) + ncp.square(yp)) * self._dL
+
+            else:
+                with nvtx.annotate("Pre-allocation", color="blue"):
+                    S = ncp.zeros(x.shape[1])
+
+                with nvtx.annotate(f"sext-kicks", color="red"):
+                    _, n = x.shape
+                    nthreads = 128
+                    nblocks = (n + nthreads - 1) // nthreads
+                    sext_sympass4_numba[nblocks, nthreads](
+                        x,
+                        self._K2Lg,
+                        self._K2Ld,
+                        self._Ma,
+                        self._Mb,
+                        self.nkick,
+                        self._dL,
+                        n,
+                        S,
                     )
-                    x[3] += K2Lg * (ncp.multiply(x[0], x[2])) / (1.0 + x[5])
-                with nvtx.annotate("Mb1", color="green"):
-                    x = ncp.dot(self._Mb, x)
-                    x[1] -= (
-                        K2Ld
-                        / 2
-                        * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
-                        / (1.0 + x[5])
-                    )
-                    x[3] += K2Ld * (ncp.multiply(x[0], x[2])) / (1.0 + x[5])
-                with nvtx.annotate("Mb2", color="red"):
-                    x = ncp.dot(self._Mb, x)
-                    x[1] -= (
-                        K2Lg
-                        / 2
-                        * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
-                        / (1.0 + x[5])
-                    )
-                    x[3] += K2Lg * (ncp.multiply(x[0], x[2])) / (1.0 + x[5])
-                with nvtx.annotate("Ma2", color="yellow"):
-                    x = ncp.dot(self._Ma, x)
-                    x2p, y2p = x[1], x[3]
-                    xp, yp = (x1p + x2p) / 2, (y1p + y2p) / 2
-                with nvtx.annotate("avg", color="magenta"):
-                    S += ncp.sqrt(1.0 + ncp.square(xp) + ncp.square(yp)) * self._dL
-            if self.tilt != 0:
-                x = ncp.dot(rotmat(-self.tilt), x)
-            if self.Dy != 0:
-                x[2] += self.Dy
-            if self.Dx != 0:
-                x[0] += self.Dx
-            x[4] += S - self.L
+
+            with nvtx.annotate("Local-to-Global", color="yellow"):
+                if self.tilt != 0:
+                    x = ncp.dot(rotmat(-self.tilt), x)
+                if self.Dy != 0:
+                    x[2] += self.Dy
+                if self.Dx != 0:
+                    x[0] += self.Dx
+
+            with nvtx.annotate("Pathlength adj.", color="blue"):
+                x[4] += S - self.L
+
             return x
 
 
