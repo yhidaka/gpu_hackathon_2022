@@ -37,6 +37,8 @@ except:
     nb_cuda = None
     print('*** Could NOT import "numba"')
 
+# nb_cuda = None
+
 try:
     import nvtx
 except:
@@ -81,11 +83,6 @@ if nb_cuda is not None:
         if i >= Z.shape[0] or j >= Z.shape[1]:
             return
 
-        # for i in range(m):
-        # for j in range(n):
-        # for k in range(p):
-        # Z[i,j] += X[i,k] * Y[k,j]
-
         for k in range(p):
             Z[i, j] += X[i, k] * Y[k, j]
 
@@ -97,12 +94,17 @@ if nb_cuda is not None:
         if i >= X.shape[0] or j >= X.shape[1]:
             return
 
-        # m, n = X.shape
-        # for i in range(m):
-        # for j in range(n):
-        # X[i,j] = Y[i,j]
-
         X[i, j] = Y[i, j]
+
+    @nb_cuda.jit(device=True)
+    def cuda_1d_vec_copy(x, y):
+
+        i = nb_cuda.grid(1)
+
+        if i >= x.size or i >= y.size:
+            return
+
+        x[i] = y[i]
 
     @nb_cuda.jit(device=True)
     def cuda_symp_int_update(x1, x2, x3, K1L):
@@ -119,7 +121,7 @@ if nb_cuda is not None:
 
         i = nb_cuda.grid(1)
 
-        if i >= x1.size:
+        if (i >= x1.size) or (i >= x2.size) or (i >= xp.size):
             return
 
         xp[i] = (x1[i] + x2[i]) / 2.0
@@ -179,6 +181,154 @@ if nb_cuda is not None:
         ## --- average slope at entrance and exit
         # S += math.sqrt(1.0 + xp**2 + yp**2) * _dL
         cuda_calc_avg_slope(xp, yp, _dL, S)
+
+    @nb_cuda.jit(device=True)
+    def cuda_device_sympass4_quad(
+        x, Z, S, xp, yp, x1p, y1p, x2p, y2p, _Ma, _Mb, _K1Lg, _K1Ld, _dL
+    ):
+
+        # x1p, y1p = x[1], x[3]
+        cuda_1d_vec_copy(x1p, x[1])
+        cuda_1d_vec_copy(y1p, x[3])
+
+        cuda_matrix_mult(_Ma, x, Z)
+        cuda_matrix_copy(x, Z)
+
+        cuda_symp_int_update(x[1], x[0], x[5], _K1Lg * (-1))
+        cuda_symp_int_update(x[3], x[2], x[5], _K1Lg)
+
+        cuda_matrix_mult(_Mb, x, Z)
+        cuda_matrix_copy(x, Z)
+
+        cuda_symp_int_update(x[1], x[0], x[5], _K1Ld * (-1))
+        cuda_symp_int_update(x[3], x[2], x[5], _K1Ld)
+
+        cuda_matrix_mult(_Mb, x, Z)
+        cuda_matrix_copy(x, Z)
+
+        cuda_symp_int_update(x[1], x[0], x[5], _K1Lg * (-1))
+        cuda_symp_int_update(x[3], x[2], x[5], _K1Lg)
+
+        cuda_matrix_mult(_Ma, x, Z)
+        cuda_matrix_copy(x, Z)
+
+        x2p, y2p = x[1], x[3]
+        cuda_1d_vec_copy(x2p, x[1])
+        cuda_1d_vec_copy(y2p, x[3])
+
+        cuda_avg_1d_vecs(x1p, x2p, xp)
+        cuda_avg_1d_vecs(y1p, y2p, yp)
+
+        cuda_calc_avg_slope(xp, yp, _dL, S)
+
+    @nb_cuda.jit
+    def cuda_sympass4_quad_for_loop(
+        x, Z, S, xp, yp, x1p, y1p, x2p, y2p, _Ma, _Mb, _K1Lg, _K1Ld, _dL
+    ):
+
+        # cuda_device_sympass4_quad(x, Z, S, xp, yp, x1p, y1p, x2p, y2p,
+        # _Ma, _Mb, _K1Lg, _K1Ld, _dL)
+
+        # cuda_device_sympass4_quad(x, Z, S, xp, yp, x1p, y1p, x2p, y2p,
+        # _Ma, _Mb, _K1Lg, _K1Ld, _dL)
+
+        # cuda_device_sympass4_quad(x, Z, S, xp, yp, x1p, y1p, x2p, y2p,
+        # _Ma, _Mb, _K1Lg, _K1Ld, _dL)
+
+        # cuda_device_sympass4_quad(x, Z, S, xp, yp, x1p, y1p, x2p, y2p,
+        # _Ma, _Mb, _K1Lg, _K1Ld, _dL)
+
+        # counter = 0
+        # while counter < 2:
+        ##if True:
+        # cuda_device_sympass4_quad(x, Z, S, xp, yp, x1p, y1p, x2p, y2p,
+        # _Ma, _Mb, _K1Lg, _K1Ld, _dL)
+        # counter += 1
+
+        for i in range(1):
+
+            # x1p, y1p = x[1], x[3]
+            cuda_1d_vec_copy(x1p, x[1])
+            cuda_1d_vec_copy(y1p, x[3])
+
+            cuda_matrix_mult(_Ma, x, Z)
+            cuda_matrix_copy(x, Z)
+
+            cuda_symp_int_update(x[1], x[0], x[5], _K1Lg * (-1))
+            cuda_symp_int_update(x[3], x[2], x[5], _K1Lg)
+
+            cuda_matrix_mult(_Mb, x, Z)
+            cuda_matrix_copy(x, Z)
+
+            cuda_symp_int_update(x[1], x[0], x[5], _K1Ld * (-1))
+            cuda_symp_int_update(x[3], x[2], x[5], _K1Ld)
+
+            cuda_matrix_mult(_Mb, x, Z)
+            cuda_matrix_copy(x, Z)
+
+            cuda_symp_int_update(x[1], x[0], x[5], _K1Lg * (-1))
+            cuda_symp_int_update(x[3], x[2], x[5], _K1Lg)
+
+            cuda_matrix_mult(_Ma, x, Z)
+            cuda_matrix_copy(x, Z)
+
+            # x2p, y2p = x[1], x[3]
+            cuda_1d_vec_copy(x2p, x[1])
+            cuda_1d_vec_copy(y2p, x[3])
+
+            cuda_avg_1d_vecs(x1p, x2p, xp)
+            cuda_avg_1d_vecs(y1p, y2p, yp)
+
+            cuda_calc_avg_slope(xp, yp, _dL, S)
+
+    @nb_cuda.jit
+    def quad_sympass4_numba(x, K1Lg, K1Ld, Ma, Mb, nkick, dL, L, n, S):
+        """Based on Jonathan Dursi's code"""
+
+        idx = nb_cuda.grid(1)
+
+        if idx < n:
+            S[idx] = 0.0
+            for _ in range(nkick):
+                x1p, y1p = x[1, idx], x[3, idx]
+
+                for dim in range(6):
+                    v = 0.0
+                    for k in range(6):
+                        v += x[dim, k] * Ma[k, idx]
+                    x[dim, idx] = v
+
+                x[1, idx] -= K1Lg * x[0, idx] / (1.0 + x[5, idx])
+                x[3, idx] += K1Lg * x[2, idx] / (1.0 + x[5, idx])
+
+                for dim in range(6):
+                    v = 0.0
+                    for k in range(6):
+                        v += x[dim, k] * Mb[k, idx]
+                    x[dim, idx] = v
+
+                x[1, idx] -= K1Ld * x[0, idx] / (1.0 + x[5, idx])
+                x[3, idx] += K1Ld * x[2, idx] / (1.0 + x[5, idx])
+
+                for dim in range(6):
+                    v = 0
+                    for k in range(6):
+                        v += x[dim, k] * Mb[k, idx]
+                    x[dim, idx] = v
+
+                x[1, idx] -= K1Lg * x[0, idx] / (1.0 + x[5, idx])
+                x[3, idx] += K1Lg * x[2, idx] / (1.0 + x[5, idx])
+
+                for dim in range(6):
+                    v = 0.0
+                    for k in range(6):
+                        v += x[dim, k] * Ma[k, idx]
+                    x[dim, idx] = v
+
+                x2p, y2p = x[1, idx], x[3, idx]
+                xp, yp = (x1p + x2p) / 2, (y1p + y2p) / 2
+
+                S[idx] += math.sqrt(1.0 + xp * xp + yp * yp) * dL
 
 
 class drif(object):
@@ -451,75 +601,147 @@ class quad(drif):
         implement 4th order symplectic tracking with given initial conditions
         """
         if not fast:
-            x = ncp.array(x, dtype=ncp.float64).reshape(6, -1)
+            with nvtx.annotate("Re-shaping", color="blue"):
+                x = ncp.array(x, dtype=ncp.float64).reshape(6, -1)
         if self.K1 == 0 or self.L == 0:
             return super(quad, self).sympass4(x)
         else:
-            if self.Dx != 0:
-                x[0] -= self.Dx
-            if self.Dy != 0:
-                x[2] -= self.Dy
-            if self.tilt != 0:
-                x = rotmat(self.tilt).dot(x)
+
+            with nvtx.annotate("Global-to-Local", color="yellow"):
+                if self.Dx != 0:
+                    x[0] -= self.Dx
+                if self.Dy != 0:
+                    x[2] -= self.Dy
+                if self.tilt != 0:
+                    x = rotmat(self.tilt).dot(x)
 
             if nb_cuda is None:
-                S = 0.0
-                for i in range(self.nkick):
-                    with nvtx.annotate("Ma1", color="blue"):
-                        x1p, y1p = x[1], x[3]
-                        x = self._Ma.dot(x)
-                        x[1] -= self._K1Lg * x[0] / (1.0 + x[5])
-                        x[3] += self._K1Lg * x[2] / (1.0 + x[5])
-                    with nvtx.annotate("Mb1", color="green"):
-                        x = self._Mb.dot(x)
-                        x[1] -= self._K1Ld * x[0] / (1.0 + x[5])
-                        x[3] += self._K1Ld * x[2] / (1.0 + x[5])
-                    with nvtx.annotate("Mb2", color="red"):
-                        x = self._Mb.dot(x)
-                        x[1] -= self._K1Lg * x[0] / (1.0 + x[5])
-                        x[3] += self._K1Lg * x[2] / (1.0 + x[5])
-                    with nvtx.annotate("Ma2", color="yellow"):
-                        x = self._Ma.dot(x)
-                        x2p, y2p = x[1], x[3]
-                        xp, yp = (x1p + x2p) / 2, (y1p + y2p) / 2
-                    with nvtx.annotate("avg", color="magenta"):
-                        # --- average slope at entrance and exit
-                        S += ncp.sqrt(1.0 + ncp.square(xp) + ncp.square(yp)) * self._dL
+                with nvtx.annotate("Non-Numba", color="green"):
+                    S = 0.0
+                    for i in range(self.nkick):
+                        with nvtx.annotate("Ma1", color="blue"):
+                            x1p, y1p = x[1], x[3]
+                            x = self._Ma.dot(x)
+                            x[1] -= self._K1Lg * x[0] / (1.0 + x[5])
+                            x[3] += self._K1Lg * x[2] / (1.0 + x[5])
+                        with nvtx.annotate("Mb1", color="green"):
+                            x = self._Mb.dot(x)
+                            x[1] -= self._K1Ld * x[0] / (1.0 + x[5])
+                            x[3] += self._K1Ld * x[2] / (1.0 + x[5])
+                        with nvtx.annotate("Mb2", color="red"):
+                            x = self._Mb.dot(x)
+                            x[1] -= self._K1Lg * x[0] / (1.0 + x[5])
+                            x[3] += self._K1Lg * x[2] / (1.0 + x[5])
+                        with nvtx.annotate("Ma2", color="yellow"):
+                            x = self._Ma.dot(x)
+                            x2p, y2p = x[1], x[3]
+                            xp, yp = (x1p + x2p) / 2, (y1p + y2p) / 2
+                        with nvtx.annotate("avg", color="magenta"):
+                            # --- average slope at entrance and exit
+                            S += (
+                                ncp.sqrt(1.0 + ncp.square(xp) + ncp.square(yp))
+                                * self._dL
+                            )
             else:
-                threadsperblock = (32, 32)
-                blockspergrid_x = math.ceil(x.shape[0] / threadsperblock[0])
-                blockspergrid_y = math.ceil(x.shape[1] / threadsperblock[1])
-                blockspergrid = (blockspergrid_x, blockspergrid_y)
 
-                Z = ncp.zeros_like(x)
-                S = ncp.zeros(x.shape[1])
-                xp = ncp.zeros_like(S)
-                yp = ncp.zeros_like(S)
-                for i in range(self.nkick):
-                    with nvtx.annotate(f"quad-kick{i+1}", color="blue"):
-                        cuda_sympass4_quad[blockspergrid, threadsperblock](
+                if False:
+                    with nvtx.annotate("Pre-allocation", color="blue"):
+                        Z = ncp.zeros_like(x)
+                        S = ncp.zeros(x.shape[1])
+                        xp = ncp.zeros_like(S)
+                        yp = ncp.zeros_like(S)
+
+                    with nvtx.annotate("Numba Setup", color="green"):
+                        threadsperblock = (32, 32)
+                        blockspergrid_x = math.ceil(x.shape[0] / threadsperblock[0])
+                        blockspergrid_y = math.ceil(x.shape[1] / threadsperblock[1])
+                        blockspergrid = (blockspergrid_x, blockspergrid_y)
+
+                    for i in range(self.nkick):
+                        with nvtx.annotate(f"quad-kick{i+1}", color="red"):
+                            cuda_sympass4_quad[blockspergrid, threadsperblock](
+                                x,
+                                Z,
+                                S,
+                                xp,
+                                yp,
+                                self._Ma,
+                                self._Mb,
+                                self._K1Lg,
+                                self._K1Ld,
+                                self._dL,
+                            )
+                            Z *= 0.0
+                elif False:  # NOT Working
+                    with nvtx.annotate("Pre-allocation", color="blue"):
+                        Z = ncp.zeros_like(x)
+                        S = ncp.zeros(x.shape[1])
+                        xp = ncp.zeros_like(S)
+                        yp = ncp.zeros_like(S)
+                        x1p = ncp.zeros_like(S)
+                        y1p = ncp.zeros_like(S)
+                        x2p = ncp.zeros_like(S)
+                        y2p = ncp.zeros_like(S)
+
+                    with nvtx.annotate("Numba Setup", color="green"):
+                        threadsperblock = (32, 32)
+                        blockspergrid_x = math.ceil(x.shape[0] / threadsperblock[0])
+                        blockspergrid_y = math.ceil(x.shape[1] / threadsperblock[1])
+                        blockspergrid = (blockspergrid_x, blockspergrid_y)
+                        print([blockspergrid, threadsperblock])
+
+                    with nvtx.annotate(f"quad-kicks", color="red"):
+                        cuda_sympass4_quad_for_loop[blockspergrid, threadsperblock](
+                            # self.nkick,
                             x,
                             Z,
                             S,
                             xp,
                             yp,
+                            x1p,
+                            y1p,
+                            x2p,
+                            y2p,
                             self._Ma,
                             self._Mb,
                             self._K1Lg,
                             self._K1Ld,
                             self._dL,
                         )
-                        # cuda_sympass4_quad(
-                        # x, S, self._Ma, self._Mb, self._K1Lg, self._K1Ld, self._dL)
-                        # Z *= 0.0
 
-            if self.tilt != 0:
-                x = rotmat(-self.tilt).dot(x)
-            if self.Dy != 0:
-                x[2] += self.Dy
-            if self.Dx != 0:
-                x[0] += self.Dx
-            x[4] += S - self.L
+                else:  # From Jonathan Dursi
+
+                    with nvtx.annotate("Pre-allocation", color="blue"):
+                        S = ncp.zeros(x.shape[1])
+
+                    with nvtx.annotate(f"quad-kicks", color="red"):
+                        _, n = x.shape
+                        nthreads = 128
+                        nblocks = (n + nthreads - 1) // nthreads
+                        quad_sympass4_numba[nblocks, nthreads](
+                            x,
+                            self._K1Lg,
+                            self._K1Ld,
+                            self._Ma,
+                            self._Mb,
+                            self.nkick,
+                            self._dL,
+                            self.L,
+                            n,
+                            S,
+                        )
+
+            with nvtx.annotate("Local-to-Global", color="yellow"):
+                if self.tilt != 0:
+                    x = rotmat(-self.tilt).dot(x)
+                if self.Dy != 0:
+                    x[2] += self.Dy
+                if self.Dx != 0:
+                    x[0] += self.Dx
+
+            with nvtx.annotate("Pathlength adj.", color="blue"):
+                x[4] += S - self.L
+
             return x
 
 
