@@ -295,7 +295,7 @@ if nb_cuda is not None:
                 for dim in range(6):
                     v = 0.0
                     for k in range(6):
-                        v += x[dim, k] * Ma[k, idx]
+                        v += Ma[dim, k] * x[k, idx]
                     x[dim, idx] = v
 
                 x[1, idx] -= K1Lg * x[0, idx] / (1.0 + x[5, idx])
@@ -304,7 +304,7 @@ if nb_cuda is not None:
                 for dim in range(6):
                     v = 0.0
                     for k in range(6):
-                        v += x[dim, k] * Mb[k, idx]
+                        v += Mb[dim, k] * x[k, idx]
                     x[dim, idx] = v
 
                 x[1, idx] -= K1Ld * x[0, idx] / (1.0 + x[5, idx])
@@ -313,7 +313,7 @@ if nb_cuda is not None:
                 for dim in range(6):
                     v = 0
                     for k in range(6):
-                        v += x[dim, k] * Mb[k, idx]
+                        v += Mb[dim, k] * x[k, idx]
                     x[dim, idx] = v
 
                 x[1, idx] -= K1Lg * x[0, idx] / (1.0 + x[5, idx])
@@ -322,7 +322,7 @@ if nb_cuda is not None:
                 for dim in range(6):
                     v = 0.0
                     for k in range(6):
-                        v += x[dim, k] * Ma[k, idx]
+                        v += Ma[dim, k] * x[k, idx]
                     x[dim, idx] = v
 
                 x2p, y2p = x[1, idx], x[3, idx]
@@ -343,7 +343,7 @@ if nb_cuda is not None:
                 for dim in range(6):
                     v = 0.0
                     for k in range(6):
-                        v += x[dim, k] * Ma[k, idx]
+                        v += Ma[dim, k] * x[k, idx]
                     x[dim, idx] = v
 
                 x[1, idx] -= (
@@ -354,7 +354,7 @@ if nb_cuda is not None:
                 for dim in range(6):
                     v = 0.0
                     for k in range(6):
-                        v += x[dim, k] * Mb[k, idx]
+                        v += Mb[dim, k] * x[k, idx]
                     x[dim, idx] = v
 
                 x[1, idx] -= (
@@ -365,7 +365,7 @@ if nb_cuda is not None:
                 for dim in range(6):
                     v = 0
                     for k in range(6):
-                        v += x[dim, k] * Mb[k, idx]
+                        v += Mb[dim, k] * x[k, idx]
                     x[dim, idx] = v
 
                 x[1, idx] -= (
@@ -376,7 +376,7 @@ if nb_cuda is not None:
                 for dim in range(6):
                     v = 0.0
                     for k in range(6):
-                        v += x[dim, k] * Ma[k, idx]
+                        v += Ma[dim, k] * x[k, idx]
                     x[dim, idx] = v
 
                 x2p, y2p = x[1, idx], x[3, idx]
@@ -401,7 +401,7 @@ if nb_cuda is not None:
                 for dim in range(6):
                     v = 0.0
                     for k in range(6):
-                        v += x[dim, k] * Ma[k, idx]
+                        v += Ma[dim, k] * x[k, idx]
                     x[dim, idx] = v
 
                 x[1, idx] -= (
@@ -417,7 +417,7 @@ if nb_cuda is not None:
                 for dim in range(6):
                     v = 0.0
                     for k in range(6):
-                        v += x[dim, k] * Mb[k, idx]
+                        v += Mb[dim, k] * x[k, idx]
                     x[dim, idx] = v
 
                 x[1, idx] -= (
@@ -433,7 +433,7 @@ if nb_cuda is not None:
                 for dim in range(6):
                     v = 0
                     for k in range(6):
-                        v += x[dim, k] * Mb[k, idx]
+                        v += Mb[dim, k] * x[k, idx]
                     x[dim, idx] = v
 
                 x[1, idx] -= (
@@ -449,7 +449,7 @@ if nb_cuda is not None:
                 for dim in range(6):
                     v = 0.0
                     for k in range(6):
-                        v += x[dim, k] * Ma[k, idx]
+                        v += Ma[dim, k] * x[k, idx]
                     x[dim, idx] = v
 
                 x2p, y2p = x[1, idx], x[3, idx]
