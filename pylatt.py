@@ -384,6 +384,81 @@ if nb_cuda is not None:
 
                 S[idx] += math.sqrt(1.0 + xp * xp + yp * yp) * dL
 
+    @nb_cuda.jit
+    def bend_sympass4_numba(
+        x, K2Lg, K2Ld, K1Lg, K1Ld, Lg, Ld, R, Ma, Mb, nkick, dL, n, S
+    ):
+
+        idx = nb_cuda.grid(1)
+
+        if idx < n:
+            S[idx] = 0.0
+            for _ in range(nkick):
+                x1p, y1p = x[1, idx], x[3, idx]
+
+                x1 = x[0, idx]
+
+                for dim in range(6):
+                    v = 0.0
+                    for k in range(6):
+                        v += x[dim, k] * Ma[k, idx]
+                    x[dim, idx] = v
+
+                x[1, idx] -= (
+                    K2Lg / 2 * (x[0, idx] ** 2 - x[2, idx] ** 2) / (1.0 + x[5, idx])
+                    + K1Lg * x[0, idx] / (1.0 + x[5, idx])
+                    - Lg * x[5, idx] / R
+                    + Lg * x[0, idx] / (R**2)
+                )
+                x[3, idx] += K2Lg * (x[0, idx] * x[2, idx]) / (
+                    1.0 + x[5, idx]
+                ) + K1Lg * x[2, idx] / (1.0 + x[5, idx])
+
+                for dim in range(6):
+                    v = 0.0
+                    for k in range(6):
+                        v += x[dim, k] * Mb[k, idx]
+                    x[dim, idx] = v
+
+                x[1, idx] -= (
+                    K2Ld / 2 * (x[0, idx] ** 2 - x[2, idx] ** 2) / (1.0 + x[5, idx])
+                    + K1Ld * x[0, idx] / (1.0 + x[5, idx])
+                    - Ld * x[5, idx] / R
+                    + Ld * x[0, idx] / (R**2)
+                )
+                x[3, idx] += K2Ld * (x[0, idx] * x[2, idx]) / (
+                    1.0 + x[5, idx]
+                ) + K1Ld * x[2, idx] / (1.0 + x[5, idx])
+
+                for dim in range(6):
+                    v = 0
+                    for k in range(6):
+                        v += x[dim, k] * Mb[k, idx]
+                    x[dim, idx] = v
+
+                x[1, idx] -= (
+                    K2Lg / 2 * (x[0, idx] ** 2 - x[2, idx] ** 2) / (1.0 + x[5, idx])
+                    + K1Lg * x[0, idx] / (1.0 + x[5, idx])
+                    - Lg * x[5, idx] / R
+                    + Lg * x[0, idx] / (R**2)
+                )
+                x[3, idx] += K2Lg * (x[0, idx] * x[2, idx]) / (
+                    1.0 + x[5, idx]
+                ) + K1Lg * x[2, idx] / (1.0 + x[5, idx])
+
+                for dim in range(6):
+                    v = 0.0
+                    for k in range(6):
+                        v += x[dim, k] * Ma[k, idx]
+                    x[dim, idx] = v
+
+                x2p, y2p = x[1, idx], x[3, idx]
+                x2 = x[0, idx]
+                xp, yp = (x1p + x2p) / 2, (y1p + y2p) / 2
+                xav = (x1 + x2) / 2
+
+                S[idx] += math.sqrt(1.0 + xp * xp + yp * yp) * (1.0 + xav / R) * dL
+
 
 class drif(object):
     """
@@ -657,6 +732,7 @@ class quad(drif):
         if not fast:
             with nvtx.annotate("Re-shaping", color="blue"):
                 x = ncp.array(x, dtype=ncp.float64).reshape(6, -1)
+
         if self.K1 == 0 or self.L == 0:
             return super(quad, self).sympass4(x)
         else:
@@ -2065,78 +2141,113 @@ class bend(drif):
         implement tracking with 4yh order symplectic integrator
         """
         if not fast:
-            x = ncp.array(x, dtype=ncp.float64).reshape(6, -1)
-        S = 0.0
-        if self.Dx != 0:
-            x[0] -= self.Dx
-        if self.Dy != 0:
-            x[2] -= self.Dy
-        if self.tilt != 0:
-            x = rotmat(self.tilt) * x
-        if hasattr(self, "_m1"):
-            x = self._m1.dot(x)
-        for i in range(self.nkick):
-            x1p, y1p = x[1], x[3]
-            x1 = x[0]
-            x = self._Ma.dot(x)
-            x[1] -= (
-                self._K2Lg
-                / 2
-                * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
-                / (1 + x[5])
-                + self._K1Lg * x[0] / (1 + x[5])
-                - self._Lg * x[5] / self._R
-                + self._Lg * x[0] / self._R**2
-            )
-            x[3] += self._K2Lg * (ncp.multiply(x[0], x[2])) / (
-                1 + x[5]
-            ) + self._K1Lg * x[2] / (1 + x[5])
-            x = self._Mb.dot(x)
-            x[1] -= (
-                self._K2Ld
-                / 2
-                * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
-                / (1 + x[5])
-                + self._K1Ld * x[0] / (1 + x[5])
-                - self._Ld * x[5] / self._R
-                + self._Ld * x[0] / self._R**2
-            )
-            x[3] += self._K2Ld * (ncp.multiply(x[0], x[2])) / (
-                1 + x[5]
-            ) + self._K1Ld * x[2] / (1 + x[5])
-            x = self._Mb.dot(x)
-            x[1] -= (
-                self._K2Lg
-                / 2
-                * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
-                / (1 + x[5])
-                + self._K1Lg * x[0] / (1 + x[5])
-                - self._Lg * x[5] / self._R
-                + self._Lg * x[0] / self._R**2
-            )
-            x[3] += self._K2Lg * (ncp.multiply(x[0], x[2])) / (
-                1 + x[5]
-            ) + self._K1Lg * x[2] / (1 + x[5])
-            x = self._Ma.dot(x)
-            x2p, y2p = x[1], x[3]
-            x2 = x[0]
-            xp, yp = (x1p + x2p) / 2, (y1p + y2p) / 2
-            xav = (x1 + x2) / 2
-            S += (
-                ncp.multiply(
-                    ncp.sqrt(1.0 + ncp.square(xp) + ncp.square(yp)), (1 + xav / self._R)
+            with nvtx.annotate("Re-shaping", color="blue"):
+                x = ncp.array(x, dtype=ncp.float64).reshape(6, -1)
+
+        with nvtx.annotate("Global-to-Local", color="yellow"):
+            if self.Dx != 0:
+                x[0] -= self.Dx
+            if self.Dy != 0:
+                x[2] -= self.Dy
+            if self.tilt != 0:
+                x = rotmat(self.tilt) * x
+            if hasattr(self, "_m1"):
+                x = self._m1.dot(x)
+
+        if nb_cuda is None:
+            S = 0.0
+            for i in range(self.nkick):
+                x1p, y1p = x[1], x[3]
+                x1 = x[0]
+                x = self._Ma.dot(x)
+                x[1] -= (
+                    self._K2Lg
+                    / 2
+                    * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
+                    / (1 + x[5])
+                    + self._K1Lg * x[0] / (1 + x[5])
+                    - self._Lg * x[5] / self._R
+                    + self._Lg * x[0] / self._R**2
                 )
-                * self._dL
-            )
-        if hasattr(self, "_m2"):
-            x = self._m2.dot(x)
-        if self.tilt != 0:
-            x = rotmat(-self.tilt).dot(x)
-        if self.Dy != 0:
-            x[2] += self.Dy
-        if self.Dx != 0:
-            x[0] += self.Dx
-        x[4] += S - self.L
+                x[3] += self._K2Lg * (ncp.multiply(x[0], x[2])) / (
+                    1 + x[5]
+                ) + self._K1Lg * x[2] / (1 + x[5])
+                x = self._Mb.dot(x)
+                x[1] -= (
+                    self._K2Ld
+                    / 2
+                    * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
+                    / (1 + x[5])
+                    + self._K1Ld * x[0] / (1 + x[5])
+                    - self._Ld * x[5] / self._R
+                    + self._Ld * x[0] / self._R**2
+                )
+                x[3] += self._K2Ld * (ncp.multiply(x[0], x[2])) / (
+                    1 + x[5]
+                ) + self._K1Ld * x[2] / (1 + x[5])
+                x = self._Mb.dot(x)
+                x[1] -= (
+                    self._K2Lg
+                    / 2
+                    * (ncp.multiply(x[0], x[0]) - ncp.multiply(x[2], x[2]))
+                    / (1 + x[5])
+                    + self._K1Lg * x[0] / (1 + x[5])
+                    - self._Lg * x[5] / self._R
+                    + self._Lg * x[0] / self._R**2
+                )
+                x[3] += self._K2Lg * (ncp.multiply(x[0], x[2])) / (
+                    1 + x[5]
+                ) + self._K1Lg * x[2] / (1 + x[5])
+                x = self._Ma.dot(x)
+                x2p, y2p = x[1], x[3]
+                x2 = x[0]
+                xp, yp = (x1p + x2p) / 2, (y1p + y2p) / 2
+                xav = (x1 + x2) / 2
+                S += (
+                    ncp.multiply(
+                        ncp.sqrt(1.0 + ncp.square(xp) + ncp.square(yp)),
+                        (1 + xav / self._R),
+                    )
+                    * self._dL
+                )
+        else:
+            with nvtx.annotate("Pre-allocation", color="blue"):
+                S = ncp.zeros(x.shape[1])
+
+            with nvtx.annotate(f"bend-kicks", color="red"):
+                _, n = x.shape
+                nthreads = 128
+                nblocks = (n + nthreads - 1) // nthreads
+                bend_sympass4_numba[nblocks, nthreads](
+                    x,
+                    self._K2Lg,
+                    self._K2Ld,
+                    self._K1Lg,
+                    self._K1Ld,
+                    self._Lg,
+                    self._Ld,
+                    self._R,
+                    self._Ma,
+                    self._Mb,
+                    self.nkick,
+                    self._dL,
+                    n,
+                    S,
+                )
+
+        with nvtx.annotate("Local-to-Global", color="yellow"):
+            if hasattr(self, "_m2"):
+                x = self._m2.dot(x)
+            if self.tilt != 0:
+                x = rotmat(-self.tilt).dot(x)
+            if self.Dy != 0:
+                x[2] += self.Dy
+            if self.Dx != 0:
+                x[0] += self.Dx
+
+        with nvtx.annotate("Pathlength adj.", color="blue"):
+            x[4] += S - self.L
+
         return x
 
 
