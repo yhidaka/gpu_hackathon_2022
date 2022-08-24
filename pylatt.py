@@ -13,8 +13,10 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
 __version__ = 2.0
 __author__ = "YONGJUN LI, mpyliyj@gmail.com or mpyliyj@hotmail.com"
 
+import cmath
 import copy
 import functools
+import math
 from multiprocessing import Process, Queue
 import string
 import sys
@@ -27,6 +29,13 @@ from matplotlib.collections import PatchCollection
 import matplotlib.patches as mpatches
 import matplotlib.pylab as plt
 import numpy as np
+
+try:
+    import numba as nb
+    from numba import cuda as nb_cuda
+except:
+    nb_cuda = None
+    print('*** Could NOT import "numba"')
 
 try:
     import nvtx
@@ -55,6 +64,121 @@ def use_cpu():
 def use_gpu():
     global ncp
     ncp = cp
+
+
+if nb_cuda is not None:
+
+    @nb_cuda.jit(device=True)
+    def cuda_matrix_mult(X, Y, Z):
+
+        Z[:, :] = 0.0
+
+        # m, n = X.shape
+        _n, p = Y.shape
+
+        i, j = nb_cuda.grid(2)
+
+        if i >= Z.shape[0] or j >= Z.shape[1]:
+            return
+
+        # for i in range(m):
+        # for j in range(n):
+        # for k in range(p):
+        # Z[i,j] += X[i,k] * Y[k,j]
+
+        for k in range(p):
+            Z[i, j] += X[i, k] * Y[k, j]
+
+    @nb_cuda.jit(device=True)
+    def cuda_matrix_copy(X, Y):
+
+        i, j = nb_cuda.grid(2)
+
+        if i >= X.shape[0] or j >= X.shape[1]:
+            return
+
+        # m, n = X.shape
+        # for i in range(m):
+        # for j in range(n):
+        # X[i,j] = Y[i,j]
+
+        X[i, j] = Y[i, j]
+
+    @nb_cuda.jit(device=True)
+    def cuda_symp_int_update(x1, x2, x3, K1L):
+
+        i = nb_cuda.grid(1)
+
+        if i >= x1.size:
+            return
+
+        x1[i] += K1L * x2[i] / (1.0 + x3[i])
+
+    @nb_cuda.jit(device=True)
+    def cuda_avg_1d_vecs(x1, x2, xp):
+
+        i = nb_cuda.grid(1)
+
+        if i >= x1.size:
+            return
+
+        xp[i] = (x1[i] + x2[i]) / 2.0
+
+    @nb_cuda.jit(device=True)
+    def cuda_calc_avg_slope(xp, yp, _dL, S):
+
+        i = nb_cuda.grid(1)
+
+        if i >= xp.size:
+            return
+
+        S[i] += math.sqrt(1.0 + xp[i] ** 2 + yp[i] ** 2) * _dL
+
+    @nb_cuda.jit
+    def cuda_sympass4_quad(x, Z, S, xp, yp, _Ma, _Mb, _K1Lg, _K1Ld, _dL):
+
+        m, n = _Ma.shape
+        _n, p = x.shape
+        # assert n == _n
+
+        # with nvtx.annotate("Ma1", color="blue"):
+        x1p, y1p = x[1], x[3]
+        ##x = _Ma.dot(x)
+        cuda_matrix_mult(_Ma, x, Z)
+        cuda_matrix_copy(x, Z)
+
+        # x[1] -= _K1Lg * x[0] / (1.0 + x[5])
+        cuda_symp_int_update(x[1], x[0], x[5], _K1Lg * (-1))
+        # x[3] += _K1Lg * x[2] / (1.0 + x[5])
+        cuda_symp_int_update(x[3], x[2], x[5], _K1Lg)
+        ##with nvtx.annotate("Mb1", color="green"):
+        ##x = _Mb.dot(x)
+        cuda_matrix_mult(_Mb, x, Z)
+        cuda_matrix_copy(x, Z)
+        # x[1] -= _K1Ld * x[0] / (1.0 + x[5])
+        cuda_symp_int_update(x[1], x[0], x[5], _K1Ld * (-1))
+        # x[3] += _K1Ld * x[2] / (1.0 + x[5])
+        cuda_symp_int_update(x[3], x[2], x[5], _K1Ld)
+        ##with nvtx.annotate("Mb2", color="red"):
+        ##x = _Mb.dot(x)
+        cuda_matrix_mult(_Mb, x, Z)
+        cuda_matrix_copy(x, Z)
+        # x[1] -= _K1Lg * x[0] / (1.0 + x[5])
+        cuda_symp_int_update(x[1], x[0], x[5], _K1Lg * (-1))
+        # x[3] += _K1Lg * x[2] / (1.0 + x[5])
+        cuda_symp_int_update(x[3], x[2], x[5], _K1Lg)
+        ##with nvtx.annotate("Ma2", color="yellow"):
+        ##x = _Ma.dot(x)
+        cuda_matrix_mult(_Ma, x, Z)
+        cuda_matrix_copy(x, Z)
+        x2p, y2p = x[1], x[3]
+        # xp, yp = (x1p + x2p) / 2, (y1p + y2p) / 2
+        cuda_avg_1d_vecs(x1p, x2p, xp)
+        cuda_avg_1d_vecs(y1p, y2p, yp)
+        ##with nvtx.annotate("avg", color="magenta"):
+        ## --- average slope at entrance and exit
+        # S += math.sqrt(1.0 + xp**2 + yp**2) * _dL
+        cuda_calc_avg_slope(xp, yp, _dL, S)
 
 
 class drif(object):
@@ -337,28 +461,58 @@ class quad(drif):
                 x[2] -= self.Dy
             if self.tilt != 0:
                 x = rotmat(self.tilt).dot(x)
-            S = 0.0
-            for i in range(self.nkick):
-                with nvtx.annotate("Ma1", color="blue"):
-                    x1p, y1p = x[1], x[3]
-                    x = self._Ma.dot(x)
-                    x[1] -= self._K1Lg * x[0] / (1.0 + x[5])
-                    x[3] += self._K1Lg * x[2] / (1.0 + x[5])
-                with nvtx.annotate("Mb1", color="green"):
-                    x = self._Mb.dot(x)
-                    x[1] -= self._K1Ld * x[0] / (1.0 + x[5])
-                    x[3] += self._K1Ld * x[2] / (1.0 + x[5])
-                with nvtx.annotate("Mb2", color="red"):
-                    x = self._Mb.dot(x)
-                    x[1] -= self._K1Lg * x[0] / (1.0 + x[5])
-                    x[3] += self._K1Lg * x[2] / (1.0 + x[5])
-                with nvtx.annotate("Ma2", color="yellow"):
-                    x = self._Ma.dot(x)
-                    x2p, y2p = x[1], x[3]
-                    xp, yp = (x1p + x2p) / 2, (y1p + y2p) / 2
-                with nvtx.annotate("avg", color="magenta"):
-                    # --- average slope at entrance and exit
-                    S += ncp.sqrt(1.0 + ncp.square(xp) + ncp.square(yp)) * self._dL
+
+            if nb_cuda is None:
+                S = 0.0
+                for i in range(self.nkick):
+                    with nvtx.annotate("Ma1", color="blue"):
+                        x1p, y1p = x[1], x[3]
+                        x = self._Ma.dot(x)
+                        x[1] -= self._K1Lg * x[0] / (1.0 + x[5])
+                        x[3] += self._K1Lg * x[2] / (1.0 + x[5])
+                    with nvtx.annotate("Mb1", color="green"):
+                        x = self._Mb.dot(x)
+                        x[1] -= self._K1Ld * x[0] / (1.0 + x[5])
+                        x[3] += self._K1Ld * x[2] / (1.0 + x[5])
+                    with nvtx.annotate("Mb2", color="red"):
+                        x = self._Mb.dot(x)
+                        x[1] -= self._K1Lg * x[0] / (1.0 + x[5])
+                        x[3] += self._K1Lg * x[2] / (1.0 + x[5])
+                    with nvtx.annotate("Ma2", color="yellow"):
+                        x = self._Ma.dot(x)
+                        x2p, y2p = x[1], x[3]
+                        xp, yp = (x1p + x2p) / 2, (y1p + y2p) / 2
+                    with nvtx.annotate("avg", color="magenta"):
+                        # --- average slope at entrance and exit
+                        S += ncp.sqrt(1.0 + ncp.square(xp) + ncp.square(yp)) * self._dL
+            else:
+                threadsperblock = (32, 32)
+                blockspergrid_x = math.ceil(x.shape[0] / threadsperblock[0])
+                blockspergrid_y = math.ceil(x.shape[1] / threadsperblock[1])
+                blockspergrid = (blockspergrid_x, blockspergrid_y)
+
+                Z = ncp.zeros_like(x)
+                S = ncp.zeros(x.shape[1])
+                xp = ncp.zeros_like(S)
+                yp = ncp.zeros_like(S)
+                for i in range(self.nkick):
+                    with nvtx.annotate(f"quad-kick{i+1}", color="blue"):
+                        cuda_sympass4_quad[blockspergrid, threadsperblock](
+                            x,
+                            Z,
+                            S,
+                            xp,
+                            yp,
+                            self._Ma,
+                            self._Mb,
+                            self._K1Lg,
+                            self._K1Ld,
+                            self._dL,
+                        )
+                        # cuda_sympass4_quad(
+                        # x, S, self._Ma, self._Mb, self._K1Lg, self._K1Ld, self._dL)
+                        # Z *= 0.0
+
             if self.tilt != 0:
                 x = rotmat(-self.tilt).dot(x)
             if self.Dy != 0:
